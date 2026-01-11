@@ -12,15 +12,21 @@ BASE_DIR = Path(__file__).parent
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4o-mini"  # For text summaries
+OPENAI_VISION_MODEL = "gpt-4o-mini"  # For image analysis (person/phone detection)
 OPENAI_MAX_RETRIES = 3
 OPENAI_RETRY_DELAY = 1  # seconds
+
+# Vision API settings
+VISION_DETECTION_INTERVAL = 1.0  # Analyze frames every N seconds (to save costs)
+PHONE_CONFIDENCE_THRESHOLD = 0.5  # Confidence threshold for phone detection
 
 # Detection thresholds
 FACE_DETECTION_CONFIDENCE = 0.5
 AWAY_GRACE_PERIOD_SECONDS = 5  # How long before marking as "away"
-PHONE_DETECTION_ANGLE_THRESHOLD = 45  # degrees (head tilt down)
-PHONE_DETECTION_DURATION_SECONDS = 3  # How long head must be down
+PHONE_DETECTION_ANGLE_THRESHOLD = 25  # degrees (head tilt down) - Legacy, still used in scoring
+PHONE_DETECTION_DURATION_SECONDS = 2  # How long distraction must persist
+DISTRACTION_SCORE_THRESHOLD = 35  # Score 0-100, >35 = distracted (more sensitive!)
 STATE_CHANGE_DEBOUNCE_SECONDS = 2  # Prevent rapid state changes
 
 # Camera Configuration

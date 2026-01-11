@@ -17,7 +17,7 @@ from typing import Optional
 
 import config
 from camera.capture import CameraCapture
-from camera.detection import PresenceDetector
+from camera.vision_detector import VisionDetector
 from tracking.session import Session
 from tracking.analytics import compute_statistics
 from ai.summariser import SessionSummariser
@@ -51,14 +51,17 @@ class FocusTracker:
         """
         print("\n🔍 Checking requirements...")
         
-        # Check OpenAI API key
+        # Check OpenAI API key - REQUIRED for vision detection
         if not config.OPENAI_API_KEY:
-            print("⚠️  Warning: OpenAI API key not found in environment.")
-            print("   Set OPENAI_API_KEY in your .env file to enable AI summaries.")
-            print("   Continuing with basic summaries...\n")
+            print("\n❌ ERROR: OpenAI API key is REQUIRED!")
+            print("   This app now uses OpenAI Vision API for detection.")
+            print("   Please set OPENAI_API_KEY in your .env file.")
+            print("\n   Get your API key from: https://platform.openai.com/api-keys")
+            return False
         else:
             print("✓ OpenAI API key found")
-            print(f"✓ Using model: {config.OPENAI_MODEL}")
+            print(f"✓ Using vision model: {config.OPENAI_VISION_MODEL}")
+            print(f"✓ Using text model: {config.OPENAI_MODEL}")
         
         # Check camera availability
         print("✓ Camera access ready")
@@ -68,14 +71,15 @@ class FocusTracker:
     def display_welcome(self):
         """Display welcome message and instructions."""
         print("\n" + "=" * 60)
-        print("🎯 AI Study Focus Tracker v1.0")
+        print("🎯 AI Study Focus Tracker v1.0 (AI-Powered Edition)")
         print("=" * 60)
         print("\nThis app will:")
-        print("  • Monitor your presence via webcam")
-        print("  • Detect potential phone usage")
-        print("  • Generate a detailed PDF report with AI insights")
-        print("\nPrivacy: All video processing happens locally on your device.")
-        print("Only anonymous statistics are sent to OpenAI for summaries.")
+        print("  • Monitor your presence via OpenAI Vision API")
+        print("  • Detect phone usage using AI")
+        print("  • Generate detailed PDF reports with AI insights")
+        print("\nPrivacy: Camera frames are sent to OpenAI for analysis.")
+        print("Frames are NOT stored long-term (30-day retention for abuse only).")
+        print("All detections and summaries powered by AI!")
         print("\n" + "=" * 60)
     
     def wait_for_start(self):
@@ -109,7 +113,7 @@ class FocusTracker:
         
         try:
             # Initialize detector and camera
-            detector = PresenceDetector()
+            detector = VisionDetector()
             
             with CameraCapture() as camera:
                 if not camera.is_opened:
@@ -131,9 +135,12 @@ class FocusTracker:
                     time_since_detection = current_time - last_detection_time
                     
                     if time_since_detection >= (1.0 / config.DETECTION_FPS):
-                        # Perform detection
+                        # Perform detection using OpenAI Vision
                         detection_state = detector.get_detection_state(frame)
-                        event_type = detector.determine_event_type(detection_state)
+                        
+                        # Determine event type from detection
+                        from camera import get_event_type
+                        event_type = get_event_type(detection_state)
                         
                         # Log event if state changed
                         self.session.log_event(event_type)

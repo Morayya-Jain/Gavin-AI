@@ -156,9 +156,15 @@ Keep suggestions practical and positive. Focus on what they can do differently n
             Parsed response dictionary or None if failed
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
+            # Check if model supports JSON mode (only gpt-4o, gpt-4o-mini, gpt-3.5-turbo-1106+)
+            json_mode_supported = any(model in self.model.lower() for model in [
+                'gpt-4o', 'gpt-3.5-turbo-1106', 'gpt-3.5-turbo-0125'
+            ])
+            
+            # Build API call parameters
+            api_params = {
+                "model": self.model,
+                "messages": [
                     {
                         "role": "system",
                         "content": "You are a supportive study coach who provides "
@@ -169,10 +175,15 @@ Keep suggestions practical and positive. Focus on what they can do differently n
                         "content": prompt
                     }
                 ],
-                temperature=0.7,
-                max_tokens=500,
-                response_format={"type": "json_object"}
-            )
+                "temperature": 0.7,
+                "max_tokens": 500
+            }
+            
+            # Add JSON mode only if supported
+            if json_mode_supported:
+                api_params["response_format"] = {"type": "json_object"}
+            
+            response = self.client.chat.completions.create(**api_params)
             
             # Extract the response content
             content = response.choices[0].message.content

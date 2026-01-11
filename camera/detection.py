@@ -1,26 +1,26 @@
-"""Presence and phone usage detection using MediaPipe."""
+"""Presence and phone usage detection using MediaPipe and Computer Vision."""
 
 import cv2
 import mediapipe as mp
 import numpy as np
 import logging
-from typing import Dict, Optional, Tuple, List
-import math
+from typing import Dict, Optional
 import config
+from camera.phone_detector import PhoneDetector
 
 logger = logging.getLogger(__name__)
 
 
 class PresenceDetector:
     """
-    Detects student presence and phone usage using MediaPipe.
+    Detects student presence and phone usage.
     
-    Uses face detection for presence and pose/face mesh for
-    head angle estimation to detect phone usage.
+    - Presence: Using MediaPipe face detection
+    - Phone: Using computer vision object detection (no head tilt/eye gaze)
     """
     
     def __init__(self):
-        """Initialize MediaPipe solutions."""
+        """Initialize MediaPipe solutions and phone detector."""
         # Face detection for presence
         self.mp_face_detection = mp.solutions.face_detection
         self.face_detection = self.mp_face_detection.FaceDetection(
@@ -28,32 +28,16 @@ class PresenceDetector:
             min_detection_confidence=config.FACE_DETECTION_CONFIDENCE
         )
         
-        # Face mesh for head pose estimation and eye tracking
-        self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
+        # Phone detector using computer vision
+        self.phone_detector = PhoneDetector()
         
-        # Hands detection for phone-holding gesture
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            max_num_hands=2,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        
-        # State tracking for debouncing
-        self.last_state = None
-        self.state_frame_count = 0
+        # State tracking
         self.phone_frame_count = 0
+        self.phone_detections = []  # Rolling window of phone detections
     
     def __del__(self):
         """Clean up MediaPipe resources."""
         self.face_detection.close()
-        self.face_mesh.close()
     
     def detect_presence(self, frame: np.ndarray) -> bool:
         """
@@ -79,93 +63,55 @@ class PresenceDetector:
     
     def detect_phone_usage(self, frame: np.ndarray) -> bool:
         """
-        Detect potential phone usage by analyzing head pose.
+        Detect if a phone is visible in the frame using computer vision.
         
-        Looks for head tilted down (looking at lap or phone) for
-        a sustained duration.
+        This uses actual object detection to find phones in the camera view.
+        NO head tilt, NO eye gaze, NO behavioral analysis - just looks for phone object.
         
         Args:
             frame: BGR image from camera
             
         Returns:
-            True if phone usage suspected, False otherwise
-        """
-        # Convert BGR to RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Process with face mesh
-        results = self.face_mesh.process(rgb_frame)
-        
-        if not results.multi_face_landmarks:
-            # No face detected, reset counter
-            self.phone_frame_count = 0
-            return False
-        
-        # Get first face landmarks
-        face_landmarks = results.multi_face_landmarks[0]
-        
-        # Calculate head tilt angle
-        angle = self._calculate_head_tilt(face_landmarks, frame.shape)
-        
-        # Check if head is tilted down beyond threshold
-        if angle is not None and angle > config.PHONE_DETECTION_ANGLE_THRESHOLD:
-            self.phone_frame_count += 1
-        else:
-            self.phone_frame_count = 0
-        
-        # Need sustained head tilt for detection
-        # Assuming ~1 FPS, this is roughly in seconds
-        threshold_frames = config.PHONE_DETECTION_DURATION_SECONDS * config.DETECTION_FPS
-        
-        return self.phone_frame_count >= threshold_frames
-    
-    def _calculate_head_tilt(
-        self,
-        face_landmarks,
-        image_shape: Tuple[int, int, int]
-    ) -> Optional[float]:
-        """
-        Calculate head tilt angle from face landmarks.
-        
-        Uses nose tip and nose bridge landmarks to estimate
-        head pitch (up/down tilt).
-        
-        Args:
-            face_landmarks: MediaPipe face landmarks
-            image_shape: Shape of the image (height, width, channels)
-            
-        Returns:
-            Tilt angle in degrees (positive = looking down), or None if calculation fails
+            True if phone detected in frame, False otherwise
         """
         try:
-            h, w, _ = image_shape
+            # Detect phone in frame
+            phone_detected, confidence = self.phone_detector.detect_phone(frame)
             
-            # Key landmarks for head pose
-            # 1 = nose tip, 168 = nose bridge top
-            nose_tip = face_landmarks.landmark[1]
-            nose_bridge = face_landmarks.landmark[168]
+            # Keep rolling window of last 5 detections
+            self.phone_detections.append((phone_detected, confidence))
+            if len(self.phone_detections) > 5:
+                self.phone_detections.pop(0)
             
-            # Convert normalized coordinates to pixel coordinates
-            nose_tip_y = nose_tip.y * h
-            nose_bridge_y = nose_bridge.y * h
+            # Count how many recent frames had phone
+            recent_detections = sum(1 for detected, _ in self.phone_detections if detected)
+            avg_confidence = sum(conf for _, conf in self.phone_detections) / len(self.phone_detections) if self.phone_detections else 0
             
-            # Calculate vertical difference
-            # If nose tip is significantly below bridge, head is tilted down
-            y_diff = nose_tip_y - nose_bridge_y
+            # Log detection info - more frequently for debugging
+            if len(self.phone_detections) % 5 == 0:
+                if recent_detections > 0:
+                    logger.info(f"📱 Phone detection: {recent_detections}/5 frames, confidence: {avg_confidence:.2f}")
+                else:
+                    logger.debug(f"No phone: {recent_detections}/5 frames, confidence: {avg_confidence:.2f}")
             
-            # Use nose tip depth (z coordinate) as additional indicator
-            # Negative z means further from camera (head tilted down)
-            z_factor = -nose_tip.z * 100  # Scale factor for sensitivity
+            # If phone detected in majority of recent frames
+            if recent_detections >= 3:  # 3 out of 5 frames
+                self.phone_frame_count += 1
+                if self.phone_frame_count == 1:
+                    logger.info(f"📱 Phone detected in frame! Confidence: {confidence:.2f}")
+            else:
+                if self.phone_frame_count > 0:
+                    logger.info(f"✓ Phone no longer visible")
+                self.phone_frame_count = 0
             
-            # Combine vertical position and depth for angle estimate
-            # This is a simplified heuristic - not true 3D angle
-            angle = (y_diff / h * 100) + z_factor
+            # Need sustained detection
+            threshold_frames = config.PHONE_DETECTION_DURATION_SECONDS * config.DETECTION_FPS
             
-            return angle
+            return self.phone_frame_count >= threshold_frames
             
         except Exception as e:
-            logger.warning(f"Error calculating head tilt: {e}")
-            return None
+            logger.warning(f"Error in phone detection: {e}")
+            return False
     
     def get_detection_state(self, frame: np.ndarray) -> Dict[str, bool]:
         """
@@ -180,7 +126,7 @@ class PresenceDetector:
         present = self.detect_presence(frame)
         phone_suspected = False
         
-        # Only check for phone usage if person is present
+        # Only check for phone if person is present
         if present:
             phone_suspected = self.detect_phone_usage(frame)
         
@@ -252,39 +198,3 @@ def visualize_detection(
     )
     
     return frame_copy
-
-
-if __name__ == "__main__":
-    # Simple test when run directly
-    import sys
-    sys.path.insert(0, "..")
-    from camera.capture import CameraCapture
-    
-    logging.basicConfig(level=logging.INFO)
-    
-    print("Testing presence detection...")
-    print("Press 'q' to quit")
-    
-    detector = PresenceDetector()
-    
-    with CameraCapture() as camera:
-        for frame in camera.frame_iterator():
-            # Get detection state
-            state = detector.get_detection_state(frame)
-            event_type = detector.determine_event_type(state)
-            
-            # Visualize
-            vis_frame = visualize_detection(frame, state)
-            
-            # Show frame
-            cv2.imshow("Detection Test", vis_frame)
-            
-            # Print state
-            print(f"State: {event_type} - Present: {state['present']}, Phone: {state['phone_suspected']}")
-            
-            # Exit on 'q'
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-    
-    cv2.destroyAllWindows()
-

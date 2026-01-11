@@ -24,6 +24,38 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def _format_time(minutes: float) -> str:
+    """
+    Format time in a human-readable way.
+    
+    Args:
+        minutes: Time in minutes (can be fractional)
+        
+    Returns:
+        Formatted string like "1m 30s" or "45s" or "2h 15m"
+    """
+    total_seconds = int(minutes * 60)
+    
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    
+    hours = total_seconds // 3600
+    remaining_seconds = total_seconds % 3600
+    mins = remaining_seconds // 60
+    secs = remaining_seconds % 60
+    
+    if hours > 0:
+        if secs > 0:
+            return f"{hours}h {mins}m {secs}s"
+        else:
+            return f"{hours}h {mins}m"
+    else:
+        if secs > 0:
+            return f"{mins}m {secs}s"
+        else:
+            return f"{mins}m"
+
+
 def generate_report(
     stats: Dict[str, Any],
     summary_data: Dict[str, Any],
@@ -104,10 +136,10 @@ def generate_report(
     # Create statistics table
     stats_data = [
         ['Metric', 'Value'],
-        ['Total Duration', f"{stats['total_minutes']:.1f} minutes"],
-        ['Focused Time', f"{stats['focused_minutes']:.1f} minutes"],
-        ['Time Away', f"{stats['away_minutes']:.1f} minutes"],
-        ['Phone Usage', f"{stats['phone_minutes']:.1f} minutes"],
+        ['Total Duration', _format_time(stats['total_minutes'])],
+        ['Focused Time', _format_time(stats['focused_minutes'])],
+        ['Time Away', _format_time(stats['away_minutes'])],
+        ['Phone Usage', _format_time(stats['phone_minutes'])],
     ]
     
     # Calculate focus percentage
@@ -146,7 +178,7 @@ def generate_report(
             timeline_data.append([
                 f"{event['start']} - {event['end']}",
                 event['type_label'],
-                f"{event['duration_minutes']:.1f} min"
+                _format_time(event['duration_minutes'])
             ])
         
         if len(events) > 8:
