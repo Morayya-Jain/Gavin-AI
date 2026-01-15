@@ -4,6 +4,7 @@ A local AI-powered study session tracker that monitors student presence and **ac
 
 ## Features
 
+- **Desktop GUI**: Modern, minimal interface with Start/Stop button, status indicator, and timer
 - **AI-Powered Detection**: Uses OpenAI Vision API to detect person presence and active phone usage
 - **Smart Phone Detection**: Detects phone usage based on attention + screen state (not physical position)
   - ✅ Detects: Person looking at phone + screen ON (whether on desk or in hands)
@@ -42,23 +43,48 @@ A local AI-powered study session tracker that monitors student presence and **ac
 
 ## Usage
 
-Run the tracker from the command line:
+### GUI Mode (Default)
+
+Launch the desktop application:
 
 ```bash
 python main.py
 ```
 
+The GUI provides:
+- **Start/Stop Button** - Control your session
+- **Status Indicator** - Real-time display of Focused/Away/Phone Detected
+- **Timer** - Track session duration
+- **Generate Report** - Create PDF report after session ends
+
+### CLI Mode
+
+For terminal-based usage:
+
+```bash
+python main.py --cli
+```
+
 ### Session Flow
 
+**GUI Mode:**
+1. Click "Start Session" to begin
+2. The status indicator shows your current state
+3. Click "Stop Session" when done
+4. Click "Generate Report" to create your PDF
+
+**CLI Mode:**
 1. Press Enter to start a study session
 2. The app monitors your presence via webcam
 3. Events are logged (present, away, phone_suspected)
 4. Press 'q' or Enter to end the session
-5. A PDF report is automatically generated with:
-   - Session statistics (duration, focus rate, time breakdown)
-   - Timeline of events (showing when you were focused/away/distracted)
-   - **Detailed AI-generated summary**: 4-5 sentence analysis identifying behavior patterns
-   - **5 specific takeaways**: Data-driven recommendations based on your actual session
+5. A PDF report is automatically generated
+
+**Reports include:**
+- Session statistics (duration, focus rate, time breakdown)
+- Timeline of events (showing when you were focused/away/distracted)
+- **Detailed AI-generated summary**: 4-5 sentence analysis identifying behavior patterns
+- **5 specific takeaways**: Data-driven recommendations based on your actual session
 
 ### Reports
 
@@ -73,27 +99,30 @@ Session data is also saved as JSON in `data/sessions/` for future analysis.
 
 ```
 gavin_ai/
-├── main.py                    # CLI entry point
+├── main.py                    # Main entry point (GUI by default, --cli for CLI)
 ├── config.py                  # Configuration and constants
-├── .env.example              # Example environment variables
-├── requirements.txt          # Dependencies
-├── README.md                 # Documentation
+├── .env.example               # Example environment variables
+├── requirements.txt           # Dependencies
+├── README.md                  # Documentation
+├── gui/
+│   ├── __init__.py
+│   └── app.py                # Desktop GUI application (tkinter)
 ├── camera/
 │   ├── __init__.py
-│   ├── capture.py           # Webcam management
-│   └── detection.py         # Presence & phone detection
+│   ├── capture.py            # Webcam management
+│   └── vision_detector.py    # AI-powered detection (OpenAI Vision API)
 ├── tracking/
 │   ├── __init__.py
-│   ├── session.py           # Session management & event logging
-│   └── analytics.py         # Event summarization & statistics
+│   ├── session.py            # Session management & event logging
+│   └── analytics.py          # Event summarization & statistics
 ├── reporting/
 │   ├── __init__.py
-│   └── pdf_report.py        # PDF generation
+│   └── pdf_report.py         # PDF generation
 ├── ai/
 │   ├── __init__.py
-│   └── summariser.py        # OpenAI API integration
+│   └── summariser.py         # OpenAI API integration
 ├── data/
-│   └── sessions/            # Stored session JSON files
+│   └── sessions/             # Stored session JSON files
 └── tests/
     ├── test_session.py
     └── test_analytics.py
@@ -138,6 +167,7 @@ Edit `config.py` to customize:
 
 ## Future Enhancements
 
+- macOS/Windows packaging (.app/.exe)
 - Session history viewer
 - Dashboard with charts and trends
 - Configurable detection sensitivity

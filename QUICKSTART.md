@@ -26,13 +26,45 @@ python3 main.py
 
 ## What Happens Next?
 
-1. You'll see a welcome screen
-2. Press **Enter** to start tracking
-3. Study while the app monitors via webcam
-4. Press **Enter** or **'q'** to end the session
-5. Get your PDF report with AI insights!
+### GUI Mode (Default)
 
-## Example Session
+1. A modern desktop window opens
+2. Click **"Start Session"** to begin tracking
+3. Watch the status indicator show Focused/Away/Phone Detected
+4. Click **"Stop Session"** when you're done
+5. Click **"Generate Report"** to get your PDF!
+
+### CLI Mode (Alternative)
+
+Run with `python3 main.py --cli` for terminal-based tracking:
+
+1. Press **Enter** to start tracking
+2. Study while the app monitors via webcam
+3. Press **Enter** or **'q'** to end the session
+4. Get your PDF report with AI insights!
+
+## Example Sessions
+
+### GUI Mode
+
+```
+┌────────────────────────────────────┐
+│          GAVIN AI                  │
+│      Study Focus Tracker           │
+│                                    │
+│  ● Focused                         │
+│                                    │
+│        01:23:45                    │
+│      Session Duration              │
+│                                    │
+│    [ Stop Session ]                │
+│                                    │
+│    [ Generate Report ]             │
+│                                    │
+└────────────────────────────────────┘
+```
+
+### CLI Mode
 
 ```
 🎯 Gavin AI - AI-Powered Study Assistant

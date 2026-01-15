@@ -6,6 +6,7 @@ Gavin AI is an AI-powered study focus tracking application that monitors student
 
 **Tech Stack:**
 - Python 3.9+
+- tkinter for desktop GUI
 - OpenAI Vision API (gpt-4o-mini) for detection
 - OpenAI GPT API for summaries
 - OpenCV for camera capture
@@ -39,8 +40,11 @@ Gavin AI is an AI-powered study focus tracking application that monitors student
 
 ```
 gavin_ai/
-├── main.py                    # CLI entry point
+├── main.py                    # Main entry point (GUI default, --cli for CLI)
 ├── config.py                  # All configuration constants
+├── gui/
+│   ├── __init__.py
+│   └── app.py                # Desktop GUI application (tkinter)
 ├── camera/
 │   ├── capture.py            # Webcam management (OpenCV)
 │   ├── vision_detector.py    # AI-powered detection (OpenAI Vision API)
@@ -109,6 +113,15 @@ REPORTS_DIR = BASE_DIR / "reports"
 ```
 
 ## Module Guidelines
+
+### gui/app.py
+- Main desktop GUI application using tkinter
+- GavinGUI class manages the application window
+- Features: Start/Stop button, status indicator, timer, report generation
+- Runs detection in separate thread for responsive UI
+- Uses thread-safe UI updates via root.after()
+- Modern dark theme with teal/coral accents
+- Privacy notice popup on first launch
 
 ### camera/vision_detector.py
 - Primary detection system
@@ -205,13 +218,17 @@ display_time = _format_time(minutes)
 - Manual testing: camera detection, PDF generation
 
 ### Manual Testing Checklist
-1. Camera opens successfully
-2. Vision API detects person presence
-3. Vision API detects phone when visible
-4. Events logged correctly
-5. Statistics math adds up
-6. PDF generates successfully
-7. AI summary is direct and specific
+1. GUI launches successfully
+2. Privacy notice appears on first launch
+3. Camera opens successfully
+4. Vision API detects person presence
+5. Vision API detects phone when visible
+6. Status indicator updates in real-time
+7. Timer displays correctly
+8. Events logged correctly
+9. Statistics math adds up
+10. PDF generates successfully
+11. AI summary is direct and specific
 
 ## Cost Awareness
 
@@ -287,9 +304,10 @@ python-dotenv>=1.0.0      # Environment variables
 
 ## Current State
 
-**Version:** 1.0 (AI-Powered Edition)
-**Status:** Fully functional
+**Version:** 1.1 (GUI Edition)
+**Status:** Fully functional with GUI
 **Architecture:** AI-first (OpenAI Vision + GPT)
 **Detection:** Working via Vision API
+**Interface:** Desktop GUI (tkinter) with CLI fallback
 **Known Issues:** None critical
-**Next Steps:** GUI, dashboard, better PDF visualizations
+**Next Steps:** macOS/Windows packaging, dashboard, better PDF visualizations

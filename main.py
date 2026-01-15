@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """
-Gavin AI - Main CLI Entry Point
+Gavin AI - Main Entry Point
 
 A local AI-powered study session tracker that monitors student presence
 and phone usage via webcam, logs events, and generates PDF reports with
 OpenAI-powered insights.
+
+Usage:
+    python main.py          # Launch GUI (default)
+    python main.py --cli    # Launch CLI mode
+    python main.py --gui    # Launch GUI mode (explicit)
 """
 
 import sys
 import time
 import logging
 import threading
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -284,8 +290,8 @@ class GavinAI:
         print(f"📱 Phone Usage: {phone_min:.1f} minutes")
 
 
-def main():
-    """Main entry point for the application."""
+def main_cli():
+    """Run the CLI version of the application."""
     tracker = GavinAI()
     
     # Display welcome and check requirements
@@ -305,14 +311,64 @@ def main():
     tracker.end_session()
 
 
+def main_gui():
+    """Run the GUI version of the application."""
+    from gui.app import main as gui_main
+    gui_main()
+
+
+def main():
+    """
+    Main entry point - parses arguments and launches appropriate mode.
+    
+    Default mode is GUI unless --cli is specified.
+    """
+    parser = argparse.ArgumentParser(
+        description="Gavin AI - AI-Powered Study Focus Tracker",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py          Launch GUI (default)
+  python main.py --gui    Launch GUI explicitly
+  python main.py --cli    Launch CLI mode
+        """
+    )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run in CLI mode (terminal-based)"
+    )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Run in GUI mode (default)"
+    )
+    
+    args = parser.parse_args()
+    
+    # CLI mode if explicitly requested
+    if args.cli:
+        try:
+            main_cli()
+        except KeyboardInterrupt:
+            print("\n\n👋 Goodbye!")
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Fatal error: {e}", exc_info=True)
+            print(f"\n❌ Fatal error: {e}")
+            sys.exit(1)
+    else:
+        # Default to GUI mode
+        try:
+            main_gui()
+        except KeyboardInterrupt:
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Fatal error: {e}", exc_info=True)
+            print(f"\n❌ Fatal error: {e}")
+            sys.exit(1)
+
+
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n👋 Goodbye!")
-        sys.exit(0)
-    except Exception as e:
-        logger.error(f"Fatal error: {e}", exc_info=True)
-        print(f"\n❌ Fatal error: {e}")
-        sys.exit(1)
+    main()
 

@@ -4,7 +4,7 @@ overview: A streamlined approach to distribute Gavin AI as a Mac desktop app wit
 todos:
   - id: gui-development
     content: Create tkinter GUI with Start/Stop, status indicator, timer, and report button
-    status: pending
+    status: completed
   - id: packaging-macos
     content: Package app for macOS using PyInstaller as .app bundle
     status: pending
