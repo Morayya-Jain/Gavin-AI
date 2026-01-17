@@ -152,16 +152,16 @@ def test_pdf_all_categories():
     Test PDF generation for each focus category to verify colored statements.
     
     Generates PDFs with focus rates in each category:
-    - Great (90-100%)
-    - Satisfactory (75-89%)
-    - Poor (50-74%)
-    - Very Poor (0-49%)
+    - Grand (90-100%)
+    - Promising (75-89%)
+    - Developing (50-74%)
+    - Needs Focus (0-49%)
     """
     categories = [
-        ('great', 0.95),          # 95% focus
-        ('satisfactory', 0.80),   # 80% focus
-        ('poor', 0.60),           # 60% focus
-        ('very_poor', 0.30),      # 30% focus
+        ('grand', 0.95),          # 95% focus
+        ('promising', 0.80),      # 80% focus
+        ('developing', 0.60),     # 60% focus
+        ('needs_focus', 0.30),    # 30% focus
     ]
     
     with tempfile.TemporaryDirectory() as temp_dir:

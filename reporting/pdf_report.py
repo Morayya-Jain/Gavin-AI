@@ -160,28 +160,28 @@ def _format_time(minutes: float) -> str:
 
 # Focus category definitions with colors matching the gauge
 FOCUS_CATEGORIES = {
-    'great': {
+    'grand': {
         'min': 90,
         'max': 100,
-        'label': 'great',
+        'label': 'grand',
         'color': '#2E7D32'  # Green
     },
-    'satisfactory': {
+    'promising': {
         'min': 75,
         'max': 89,
-        'label': 'satisfactory',
+        'label': 'promising',
         'color': '#FFCA28'  # Yellow
     },
-    'poor': {
+    'developing': {
         'min': 50,
         'max': 74,
-        'label': 'poor',
+        'label': 'developing',
         'color': '#F57C00'  # Orange
     },
-    'very_poor': {
+    'needs_focus': {
         'min': 0,
         'max': 49,
-        'label': 'very poor',
+        'label': 'needs focus',
         'color': '#B71C1C'  # Red
     }
 }
@@ -198,17 +198,17 @@ def _get_focus_category(focus_pct: float) -> Tuple[str, str, str]:
         Tuple of (category_key, category_label, color_hex)
     """
     if focus_pct >= 90:
-        cat = FOCUS_CATEGORIES['great']
-        return ('great', cat['label'], cat['color'])
+        cat = FOCUS_CATEGORIES['grand']
+        return ('grand', cat['label'], cat['color'])
     elif focus_pct >= 75:
-        cat = FOCUS_CATEGORIES['satisfactory']
-        return ('satisfactory', cat['label'], cat['color'])
+        cat = FOCUS_CATEGORIES['promising']
+        return ('promising', cat['label'], cat['color'])
     elif focus_pct >= 50:
-        cat = FOCUS_CATEGORIES['poor']
-        return ('poor', cat['label'], cat['color'])
+        cat = FOCUS_CATEGORIES['developing']
+        return ('developing', cat['label'], cat['color'])
     else:
-        cat = FOCUS_CATEGORIES['very_poor']
-        return ('very_poor', cat['label'], cat['color'])
+        cat = FOCUS_CATEGORIES['needs_focus']
+        return ('needs_focus', cat['label'], cat['color'])
 
 
 def _load_focus_statements() -> Dict[str, List[str]]:
@@ -226,10 +226,10 @@ def _load_focus_statements() -> Dict[str, List[str]]:
         logger.error(f"Error loading focus statements: {e}")
         # Return fallback statements if file cannot be loaded
         return {
-            'great': ['Your focus rate of {percentage}% is great - keep it up!'],
-            'satisfactory': ['Your focus rate of {percentage}% is satisfactory - room for improvement.'],
-            'poor': ['Your focus rate of {percentage}% is poor - try to minimize distractions.'],
-            'very_poor': ['Your focus rate of {percentage}% is very poor - significant improvement needed.']
+            'grand': ['Your focus rate of {percentage}% is grand - keep it up!'],
+            'promising': ['Your focus rate of {percentage}% is promising - you\'re on the right track!'],
+            'developing': ['Your focus rate of {percentage}% is developing - keep building your focus skills!'],
+            'needs_focus': ['Your focus rate of {percentage}% needs focus - you can improve with practice!']
         }
 
 
@@ -274,11 +274,19 @@ def _create_focus_statement_paragraph(focus_pct: float) -> Paragraph:
     statement, category_label, color = _get_random_focus_statement(focus_pct)
     
     # Replace the category word with a colored version using ReportLab markup
-    # The category label appears in the statement (e.g., "is great", "is satisfactory")
+    # The category label appears in the statement (e.g., "is grand", "is promising")
     colored_label = f'<font color="{color}"><b>{category_label}</b></font>'
+    colored_label_cap = f'<font color="{color}"><b>{category_label.capitalize()}</b></font>'
     
     # Replace the category label with the colored version
+    # Handle both mid-sentence (" promising") and start of sentence ("Promising ")
     colored_statement = statement.replace(f' {category_label}', f' {colored_label}')
+    colored_statement = colored_statement.replace(f'{category_label.capitalize()} ', f'{colored_label_cap} ')
+    
+    # Handle "needs focus" special case (two words) - replace on already processed statement
+    if category_label == 'needs focus':
+        colored_statement = colored_statement.replace('needs focus', colored_label)
+        colored_statement = colored_statement.replace('Needs focus', colored_label_cap)
     
     # Create paragraph style for the statement
     statement_style = ParagraphStyle(
@@ -429,14 +437,15 @@ def _create_focus_emoji_image(focus_pct: float) -> Optional[Table]:
     # Create ReportLab image
     rl_image = Image(img_buffer, width=emoji_size, height=emoji_size)
     
-    # Wrap in a table to center it
-    table = Table([[rl_image]], colWidths=[6 * inch])
+    # Wrap in a table to center it (width matches card content area: 6.2 inch - 40px padding)
+    table = Table([[rl_image]], colWidths=[5.65 * inch])
     table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (0, 0), 'CENTER'),
         ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (0, 0), 10),
         ('BOTTOMPADDING', (0, 0), (0, 0), 10),
     ]))
+    table.hAlign = 'CENTER'
     
     return table
 
@@ -446,10 +455,10 @@ def _draw_focus_gauge(focus_pct: float) -> Drawing:
     Create a semicircular gauge visualization for focus percentage.
     
     The gauge has 4 colored zones (no labels - legend is separate):
-    - 0-49%: Very Poor (red)
-    - 50-75%: Poor (orange)
-    - 75-90%: Satisfactory (yellow)
-    - 90-100%: Great (green)
+    - 0-49%: Needs Focus (red)
+    - 50-75%: Developing (orange)
+    - 75-90%: Promising (yellow)
+    - 90-100%: Grand (green)
     
     The drawing's bottom edge aligns with the semicircle's flat base.
     
@@ -559,10 +568,10 @@ def _create_focus_legend_table() -> Table:
     """
     # Zone definitions: (range_text, label, color)
     zones = [
-        ('90-100%', 'Great', colors.HexColor('#2E7D32')),
-        ('75-89%', 'Satisfactory', colors.HexColor('#FFCA28')),
-        ('50-74%', 'Poor', colors.HexColor('#F57C00')),
-        ('0-49%', 'Very Poor', colors.HexColor('#B71C1C')),
+        ('90-100%', 'Grand', colors.HexColor('#2E7D32')),
+        ('75-89%', 'Promising', colors.HexColor('#FFCA28')),
+        ('50-74%', 'Developing', colors.HexColor('#F57C00')),
+        ('0-49%', 'Needs Focus', colors.HexColor('#B71C1C')),
     ]
     
     # Build legend table data
@@ -599,10 +608,10 @@ def _create_focus_legend_table() -> Table:
     
     # Add color coding for percentage column
     zone_colors = [
-        colors.HexColor('#2E7D32'),  # Great - green
-        colors.HexColor('#FFCA28'),  # Satisfactory - yellow
-        colors.HexColor('#F57C00'),  # Poor - orange
-        colors.HexColor('#B71C1C'),  # Very Poor - red
+        colors.HexColor('#2E7D32'),  # Grand - green
+        colors.HexColor('#FFCA28'),  # Promising - yellow
+        colors.HexColor('#F57C00'),  # Developing - orange
+        colors.HexColor('#B71C1C'),  # Needs Focus - red
     ]
     for i, color in enumerate(zone_colors):
         legend_style.append(('TEXTCOLOR', (1, i), (1, i), color))
