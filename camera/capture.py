@@ -45,6 +45,9 @@ class CameraCapture:
         """
         Open the camera device.
         
+        Automatically attempts wide mode (16:9) for more desk coverage.
+        If camera doesn't support wide resolutions, falls back to standard 640x480.
+        
         Returns:
             True if camera opened successfully, False otherwise.
         """
@@ -55,12 +58,42 @@ class CameraCapture:
                 logger.error(f"Failed to open camera at index {self.camera_index}")
                 return False
             
-            # Set frame dimensions
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            # Standard fallback resolution (4:3)
+            STANDARD_WIDTH, STANDARD_HEIGHT = 640, 480
+            
+            # Try wide mode resolutions if enabled
+            if getattr(config, 'CAMERA_WIDE_MODE', True):
+                resolutions = getattr(config, 'CAMERA_WIDE_RESOLUTIONS', [(1280, 720)])
+                wide_mode_success = False
+                
+                for width, height in resolutions:
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                    actual_w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    actual_h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    
+                    # Check if camera accepted this resolution (within 10% tolerance)
+                    if actual_w >= width * 0.9 and actual_h >= height * 0.9:
+                        logger.info(f"Wide mode enabled: {actual_w}x{actual_h}")
+                        wide_mode_success = True
+                        break
+                    else:
+                        logger.debug(f"Resolution {width}x{height} not supported, "
+                                   f"camera returned {actual_w}x{actual_h}")
+                
+                # If no wide resolution worked, fall back to standard
+                if not wide_mode_success:
+                    logger.info("Wide mode not supported by camera, reverting to standard 640x480")
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, STANDARD_WIDTH)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STANDARD_HEIGHT)
+            else:
+                # Wide mode disabled, use standard resolution
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, STANDARD_WIDTH)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, STANDARD_HEIGHT)
             
             self.is_opened = True
-            logger.info(f"Camera opened successfully at {self.width}x{self.height}")
+            props = self.get_properties()
+            logger.info(f"Camera opened at {props.get('width')}x{props.get('height')}")
             return True
             
         except Exception as e:

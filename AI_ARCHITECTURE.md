@@ -55,10 +55,6 @@ Returns:
 }
 ```
 
-**Cost:** ~$0.001-0.002 per frame  
-**Frequency:** 1 frame/second = 60 API calls per minute  
-**Session cost:** ~$0.06-0.12 per minute of session
-
 ---
 
 ### 2. **After Session (Summary Generation)**
