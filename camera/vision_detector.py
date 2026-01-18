@@ -180,7 +180,7 @@ RULES:
                         ]
                     }
                 ],
-                max_tokens=80,  # Minimal buffer - actual response is ~60 tokens
+                max_tokens=100,  # Minimal buffer - actual response is ~60 tokens
                 temperature=0.3  # Lower temp for more consistent detection
             )
             
