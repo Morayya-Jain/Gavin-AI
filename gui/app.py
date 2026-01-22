@@ -668,8 +668,8 @@ class NotificationPopup:
         self.window.attributes('-topmost', True)  # Always on top
         
         # Popup dimensions (compact card)
-        self.popup_width = 280
-        self.popup_height = 200
+        self.popup_width = 300
+        self.popup_height = 215
         
         # On macOS, make the window background transparent for true rounded corners
         if sys.platform == "darwin":
@@ -733,6 +733,7 @@ class NotificationPopup:
         """Build the popup UI matching the reference design."""
         # Colors matching the design exactly
         bg_color = "#FFFFFF"           # White background
+        border_color = "#D1D5DB"       # Light gray border for visibility
         text_dark = "#1F2937"          # Dark text for message
         text_muted = "#B0B8C1"         # Light gray for close button
         accent_blue = "#3B82F6"        # Blue color for BrainDock title
@@ -741,6 +742,7 @@ class NotificationPopup:
         badge_text_color = "#4B5563"   # Dark gray badge text
         dot_color = "#D1D5DB"          # Very light gray dot (subtle)
         corner_radius = 24             # Rounded corners
+        border_width = 2               # Border thickness
         
         # Transparent background for macOS, white for others
         if sys.platform == "darwin":
@@ -758,28 +760,83 @@ class NotificationPopup:
         )
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
-        # Draw main white background with rounded corners
+        # Draw border first (slightly larger rounded rect behind the background)
         self._draw_smooth_rounded_rect(
             self.canvas,
             0, 0,
             self.popup_width, self.popup_height,
             corner_radius,
+            fill=border_color
+        )
+        
+        # Draw main white background with rounded corners (inset by border width)
+        self._draw_smooth_rounded_rect(
+            self.canvas,
+            border_width, border_width,
+            self.popup_width - border_width, self.popup_height - border_width,
+            corner_radius - border_width,
             fill=bg_color
         )
         
-        # "BRAINDOCK" title
+        # BrainDock logo with text
         title_y = 32
         title_x = 28
-        self.canvas.create_text(
-            title_x, title_y,
-            text="BRAINDOCK",
-            font=self._get_font(14, "bold"),
-            fill=accent_blue,
-            anchor="w"
-        )
         
-        # Status dot right next to title (very close)
-        dot_x = title_x + 95  # Right next to text (adjusted for longer name)
+        # Load and display the logo image
+        self.logo_image = None  # Keep reference to prevent garbage collection
+        logo_path = ASSETS_DIR / "logo_with_text.png"
+        
+        if logo_path.exists() and Image is not None:
+            try:
+                img = Image.open(logo_path)
+                
+                # Get bounding box to crop transparent/empty space
+                if img.mode == 'RGBA':
+                    bbox = img.getbbox()
+                    if bbox:
+                        img = img.crop(bbox)
+                
+                # Scale to fit nicely in the notification header
+                # Target height around 24px for the logo
+                target_height = 20
+                aspect_ratio = img.width / img.height
+                target_width = int(target_height * aspect_ratio)
+                
+                img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                
+                # Place logo on canvas
+                self.canvas.create_image(
+                    title_x, title_y,
+                    image=self.logo_image,
+                    anchor="w"
+                )
+                
+                # Status dot position based on logo width
+                dot_x = title_x + target_width + 8
+            except Exception as e:
+                logger.warning(f"Could not load notification logo: {e}")
+                # Fallback to text
+                self.canvas.create_text(
+                    title_x, title_y,
+                    text="BRAINDOCK",
+                    font=self._get_font(14, "bold"),
+                    fill=accent_blue,
+                    anchor="w"
+                )
+                dot_x = title_x + 95
+        else:
+            # Fallback to text if image not available
+            self.canvas.create_text(
+                title_x, title_y,
+                text="BRAINDOCK",
+                font=self._get_font(14, "bold"),
+                fill=accent_blue,
+                anchor="w"
+            )
+            dot_x = title_x + 95
+        
+        # Status dot next to logo/title
         dot_size = 7
         self.canvas.create_oval(
             dot_x, title_y - dot_size // 2,
@@ -852,7 +909,7 @@ class NotificationPopup:
         )
         
         # Main message text (large, left-aligned)
-        message_y = 105
+        message_y = 115
         self.canvas.create_text(
             28, message_y,
             text=self.message,
@@ -874,7 +931,10 @@ class NotificationPopup:
     
     def _draw_smooth_rounded_rect(self, canvas, x1, y1, x2, y2, radius, fill="white", outline=""):
         """
-        Draw a properly rounded rectangle using arcs for smooth corners.
+        Draw a rounded rectangle using overlapping shapes.
+        
+        Uses a center rectangle plus corner arcs for clean rounded corners.
+        Shapes overlap by 1 pixel to prevent visible seams.
         
         Args:
             canvas: The canvas to draw on
@@ -882,33 +942,47 @@ class NotificationPopup:
             x2, y2: Bottom-right corner
             radius: Corner radius
             fill: Fill color
-            outline: Outline color
+            outline: Outline color (not used)
         """
-        # Draw the rounded rectangle using multiple shapes
-        # Top edge
-        canvas.create_rectangle(x1 + radius, y1, x2 - radius, y1 + radius, fill=fill, outline="")
-        # Bottom edge
-        canvas.create_rectangle(x1 + radius, y2 - radius, x2 - radius, y2, fill=fill, outline="")
-        # Left edge
-        canvas.create_rectangle(x1, y1 + radius, x1 + radius, y2 - radius, fill=fill, outline="")
-        # Right edge
-        canvas.create_rectangle(x2 - radius, y1 + radius, x2, y2 - radius, fill=fill, outline="")
-        # Center
-        canvas.create_rectangle(x1 + radius, y1 + radius, x2 - radius, y2 - radius, fill=fill, outline="")
+        # Draw a single large center rectangle
+        canvas.create_rectangle(
+            x1 + radius - 1, y1,
+            x2 - radius + 1, y2,
+            fill=fill, outline=""
+        )
+        # Left and right strips
+        canvas.create_rectangle(
+            x1, y1 + radius - 1,
+            x1 + radius, y2 - radius + 1,
+            fill=fill, outline=""
+        )
+        canvas.create_rectangle(
+            x2 - radius, y1 + radius - 1,
+            x2, y2 - radius + 1,
+            fill=fill, outline=""
+        )
         
-        # Draw corner arcs (circles clipped to quarters)
-        # Top-left corner
-        canvas.create_arc(x1, y1, x1 + radius * 2, y1 + radius * 2, 
-                         start=90, extent=90, fill=fill, outline="")
-        # Top-right corner
-        canvas.create_arc(x2 - radius * 2, y1, x2, y1 + radius * 2, 
-                         start=0, extent=90, fill=fill, outline="")
-        # Bottom-left corner
-        canvas.create_arc(x1, y2 - radius * 2, x1 + radius * 2, y2, 
-                         start=180, extent=90, fill=fill, outline="")
-        # Bottom-right corner
-        canvas.create_arc(x2 - radius * 2, y2 - radius * 2, x2, y2, 
-                         start=270, extent=90, fill=fill, outline="")
+        # Draw corner arcs (quarter circles)
+        # Top-left
+        canvas.create_arc(
+            x1, y1, x1 + radius * 2, y1 + radius * 2,
+            start=90, extent=90, fill=fill, outline=""
+        )
+        # Top-right
+        canvas.create_arc(
+            x2 - radius * 2, y1, x2, y1 + radius * 2,
+            start=0, extent=90, fill=fill, outline=""
+        )
+        # Bottom-left
+        canvas.create_arc(
+            x1, y2 - radius * 2, x1 + radius * 2, y2,
+            start=180, extent=90, fill=fill, outline=""
+        )
+        # Bottom-right
+        canvas.create_arc(
+            x2 - radius * 2, y2 - radius * 2, x2, y2,
+            start=270, extent=90, fill=fill, outline=""
+        )
     
     
     def _start_dismiss_timer(self):
@@ -1293,7 +1367,7 @@ class BrainDockGUI:
             bg_color=COLORS["bg_card"],
             corner_radius=12,
             border_color=COLORS["border"],
-            border_width=2,
+            border_width=4,
             height=70
         )
         self.status_card.pack(fill=tk.X)
@@ -1441,8 +1515,7 @@ class BrainDockGUI:
             text="Blocklist Settings",
             font=self.font_small,
             fg=COLORS["accent_primary"],
-            bg=COLORS["bg_primary"],
-            cursor="hand2"
+            bg=COLORS["bg_primary"]
         )
         self.settings_btn.pack()
         self.settings_btn.bind("<Button-1>", lambda e: self._show_blocklist_settings())
@@ -3350,6 +3423,15 @@ By clicking 'I Understand', you acknowledge this data processing."""
             )
             self.screen_detection_thread.start()
         
+        # Update sub-label to show session mode
+        mode_labels = {
+            config.MODE_CAMERA_ONLY: "Camera Session",
+            config.MODE_SCREEN_ONLY: "Screen Session",
+            config.MODE_BOTH: "Camera + Screen Session"
+        }
+        mode_label = mode_labels.get(self.monitoring_mode, "Session Duration")
+        self.timer_sub_label.config(text=mode_label)
+        
         logger.info(f"Session started via GUI (mode: {self.monitoring_mode})")
     
     def _stop_session(self):
@@ -3488,8 +3570,6 @@ By clicking 'I Understand', you acknowledge this data processing."""
                             # User is focused - reset tracking
                             if self.unfocused_start_time is not None:
                                 logger.debug("User refocused - resetting alert tracking")
-                                # Dismiss any active notification popup
-                                self.root.after(0, self._dismiss_alert_popup)
                             self.unfocused_start_time = None
                             self.alerts_played = 0
                         
@@ -3604,7 +3684,6 @@ By clicking 'I Understand', you acknowledge this data processing."""
                             # Reset alert tracking
                             if self.unfocused_start_time is not None:
                                 logger.debug("Screen refocused - resetting alert tracking")
-                                self.root.after(0, self._dismiss_alert_popup)
                             self.unfocused_start_time = None
                             self.alerts_played = 0
                     
@@ -3904,8 +3983,8 @@ By clicking 'I Understand', you acknowledge this data processing."""
         # Play sound first (synchronously start the process)
         play_sound()
         
-        # Show notification popup on main thread (1 second delay to sync with sound)
-        self.root.after(1500, lambda: self._show_alert_popup(badge_text, message))
+        # Show notification popup immediately after sound starts
+        self.root.after(100, lambda: self._show_alert_popup(badge_text, message))
         
         logger.info(f"Unfocused alert #{self.alerts_played + 1} played")
     
@@ -4001,6 +4080,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
             state=tk.NORMAL
         )
         self.timer_label.configure(text="00:00:00")
+        self.timer_sub_label.configure(text="Session Duration")
     
     def _open_file(self, filepath: Path):
         """

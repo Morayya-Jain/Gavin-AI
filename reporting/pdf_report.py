@@ -4,7 +4,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 
 from reportlab.lib.pagesizes import letter
@@ -18,17 +18,13 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     PageBreak,
-    Frame,
-    PageTemplate,
     Image,
     Flowable
 )
 from io import BytesIO
 from PIL import Image as PILImage, ImageDraw, ImageFont
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
-from reportlab.pdfgen import canvas
-from reportlab.graphics.shapes import Drawing, Wedge, Polygon, String, Line
-from reportlab.graphics import renderPDF
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.graphics.shapes import Drawing, Wedge, Polygon, Circle
 import math
 
 import config
@@ -81,21 +77,14 @@ def _add_gradient_background(canvas_obj, doc):
 
 def _add_header(canvas_obj, doc):
     """
-    Add header with BrainDock logo text to each page.
+    Add header to each page (currently empty - logo removed).
     
     Args:
         canvas_obj: ReportLab canvas object
         doc: Document object
     """
-    canvas_obj.saveState()
-    width, height = letter
-    
-    # Add "BrainDock" text logo in top right
-    canvas_obj.setFont('Times-Bold', 11)
-    canvas_obj.setFillColor(colors.HexColor('#3B82F6'))
-    canvas_obj.drawRightString(width - 50, height - 40, "BrainDock")
-    
-    canvas_obj.restoreState()
+    # No header content - logo removed
+    pass
 
 
 def _create_first_page_template(canvas_obj, doc):
@@ -575,8 +564,6 @@ def _draw_focus_gauge(focus_pct: float) -> Drawing:
     Returns:
         ReportLab Drawing object containing the gauge
     """
-    from reportlab.graphics.shapes import Circle
-    
     # Scale factor - slightly bigger (0.9 = 90% of original size)
     scale = 0.9
     
@@ -897,8 +884,8 @@ def _create_focus_card(
         content=content,
         width=6.2 * inch,
         bg_color='#F4F8FB',      # Light blue-gray background
-        border_color='#D0DDE8',  # Subtle border
-        border_width=1.5,
+        border_color='#A8C0D4',  # More visible border (darker blue-gray)
+        border_width=3,          # Noticeable border thickness
         corner_radius=15,
         padding=20,
         padding_bottom=8         # Reduced bottom padding for tighter fit with emoji
@@ -1135,7 +1122,7 @@ def generate_report(
     
     # Add focus visualization card (gauge, legend, statement, emoji in a rounded container)
     # Pass stats to customize the statement based on dominant distraction type
-    story.append(Spacer(1, 0.8 * inch))
+    story.append(Spacer(1, 0.4 * inch))
     focus_card = _create_focus_card(focus_pct, stats)
     
     # Center the focus card using a wrapper table
