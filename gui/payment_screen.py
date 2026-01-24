@@ -482,7 +482,7 @@ class PaymentScreen:
         # Purchase button - green with black text
         purchase_btn = tk.Button(
             card_frame,
-            text="Pay Via Card",
+            text="Pay via Card",
             font=button_font,
             bg=colors["button_start"],
             fg="#1F2937",

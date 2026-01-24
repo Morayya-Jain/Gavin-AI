@@ -934,7 +934,7 @@ def generate_report(
         pagesize=letter,
         rightMargin=60,
         leftMargin=60,
-        topMargin=60,
+        topMargin=45,  # Reduced from 60 to move content up
         bottomMargin=60
     )
     
@@ -989,8 +989,34 @@ def generate_report(
     
     # ===== PAGE 1: Title + Summary Statistics =====
     
-    # Title
-    story.append(Paragraph("Focus Session Report", title_style))
+    # Title - replaced with logo
+    logo_path = config.BASE_DIR / 'assets' / 'logo_with_text.png'
+    if logo_path.exists():
+        try:
+            # Calculate aspect ratio to maintain proportions
+            with PILImage.open(logo_path) as img:
+                orig_w, orig_h = img.size
+                aspect = orig_w / orig_h
+                
+                # Target height reduced further (was 0.85 inch)
+                target_h = 0.65 * inch
+                target_w = target_h * aspect
+                
+                # Create ReportLab Image
+                logo = Image(str(logo_path), width=target_w, height=target_h)
+                logo.hAlign = 'LEFT'  # Align left like the original title
+                
+                # Add spacer before logo to bring it down slightly
+                story.append(Spacer(1, 0.1 * inch))
+                story.append(logo)
+                story.append(Spacer(1, 25))  # Spacing after logo
+        except Exception as e:
+            logger.error(f"Error loading logo for report: {e}")
+            # Fallback to text if logo fails
+            story.append(Paragraph("Focus Session Report", title_style))
+    else:
+        # Fallback if logo file missing
+        story.append(Paragraph("Focus Session Report", title_style))
     
     # Session metadata as subtitle with date and time range
     date_str = start_time.strftime("%B %d, %Y")
