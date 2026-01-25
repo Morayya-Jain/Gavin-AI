@@ -205,9 +205,14 @@ USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
 
 # Stripe Payment Configuration
 # Get your keys from: https://dashboard.stripe.com/apikeys
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")  # sk_live_... or sk_test_...
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")  # pk_live_... or pk_test_...
-STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # price_... (from Stripe product)
+# Bundled Stripe keys (injected at build time)
+_BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")
+_BUNDLED_STRIPE_PUBLISHABLE = os.getenv("BUNDLED_STRIPE_PUBLISHABLE_KEY", "")
+_BUNDLED_STRIPE_PRICE_ID = os.getenv("BUNDLED_STRIPE_PRICE_ID", "")
+
+STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET)
+STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE)
+STRIPE_PRICE_ID = _get_api_key("STRIPE_PRICE_ID", _BUNDLED_STRIPE_PRICE_ID)
 PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "One-time payment")  # Display text
 # Require Terms of Service acceptance at checkout (must configure T&C URL in Stripe Dashboard first)
 STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true", "1", "yes")

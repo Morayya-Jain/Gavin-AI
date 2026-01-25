@@ -4,7 +4,11 @@
 # Uploads the built artifacts to GitHub Releases.
 #
 # Usage:
-#   1. Set GEMINI_API_KEY as a GitHub Secret (Settings > Secrets > Actions)
+#   1. Set these GitHub Secrets (Settings > Secrets > Actions):
+#      - GEMINI_API_KEY (required)
+#      - STRIPE_SECRET_KEY (optional, for payments)
+#      - STRIPE_PUBLISHABLE_KEY (optional, for payments)
+#      - STRIPE_PRICE_ID (optional, for payments)
 #   2. Push a tag: git tag v1.0.0 && git push origin v1.0.0
 #   3. The workflow will build both platforms and create a release
 #
@@ -54,6 +58,9 @@ jobs:
       - name: Build with PyInstaller
         env:
           BUNDLED_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BUNDLED_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          BUNDLED_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          BUNDLED_STRIPE_PRICE_ID: ${{ secrets.STRIPE_PRICE_ID }}
         run: |
           pyinstaller build/braindock.spec --noconfirm
       
@@ -94,6 +101,9 @@ jobs:
       - name: Build with PyInstaller
         env:
           BUNDLED_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BUNDLED_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          BUNDLED_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          BUNDLED_STRIPE_PRICE_ID: ${{ secrets.STRIPE_PRICE_ID }}
         run: |
           pyinstaller build/braindock.spec --noconfirm
       

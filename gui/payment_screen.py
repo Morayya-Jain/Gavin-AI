@@ -38,7 +38,8 @@ except ImportError:
     Image = None
     ImageTk = None
 
-ASSETS_DIR = Path(__file__).parent.parent / "assets"
+# Use BASE_DIR from config for proper bundled app support
+ASSETS_DIR = config.BASE_DIR / "assets"
 
 class LocalPaymentServer:
     """

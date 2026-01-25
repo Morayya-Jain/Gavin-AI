@@ -96,13 +96,23 @@ fi
 if [[ -z "$GEMINI_API_KEY" ]]; then
     echo -e "${RED}Error: GEMINI_API_KEY environment variable is required.${NC}"
     echo ""
-    echo "Usage: GEMINI_API_KEY=your-key ./build/build_macos.sh"
+    echo "Usage: GEMINI_API_KEY=key STRIPE_SECRET_KEY=key STRIPE_PUBLISHABLE_KEY=key STRIPE_PRICE_ID=id ./build/build_macos.sh"
     exit 1
 fi
 
 echo ""
 echo -e "${GREEN}Gemini API key detected - will be embedded in build.${NC}"
 export BUNDLED_GEMINI_API_KEY="$GEMINI_API_KEY"
+
+# Set bundled Stripe keys (optional but recommended)
+if [[ -n "$STRIPE_SECRET_KEY" ]]; then
+    echo -e "${GREEN}Stripe keys detected - will be embedded in build.${NC}"
+    export BUNDLED_STRIPE_SECRET_KEY="$STRIPE_SECRET_KEY"
+    export BUNDLED_STRIPE_PUBLISHABLE_KEY="$STRIPE_PUBLISHABLE_KEY"
+    export BUNDLED_STRIPE_PRICE_ID="$STRIPE_PRICE_ID"
+else
+    echo -e "${YELLOW}Warning: Stripe keys not provided. Payment features will be disabled.${NC}"
+fi
 
 # Clean previous builds
 echo ""

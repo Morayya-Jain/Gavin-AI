@@ -143,11 +143,11 @@ def get_colors():
 # Active color palette (for backward compatibility)
 COLORS = get_colors()
 
-# Privacy settings file
-PRIVACY_FILE = Path(__file__).parent.parent / "data" / ".privacy_accepted"
+# Privacy settings file (in user data directory for persistence)
+PRIVACY_FILE = config.USER_DATA_DIR / ".privacy_accepted"
 
-# Assets directory for logos
-ASSETS_DIR = Path(__file__).parent.parent / "assets"
+# Assets directory for logos (bundled with app)
+ASSETS_DIR = config.BASE_DIR / "assets"
 
 # Base dimensions for scaling (larger default window)
 BASE_WIDTH = 1300
