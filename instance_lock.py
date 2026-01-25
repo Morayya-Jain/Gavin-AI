@@ -101,16 +101,20 @@ class InstanceLock:
         self._lock_handle: Optional[object] = None
         self._acquired = False
     
-    def _try_acquire_lock(self) -> bool:
+    def _try_acquire_lock(self, write_pid: bool = False) -> bool:
         """
         Internal method to attempt lock acquisition.
+        
+        Args:
+            write_pid: If True, write our PID to the file after acquiring lock.
         
         Returns:
             True if lock acquired, False otherwise.
         """
         try:
-            # Open/create lock file (must keep handle open for lock to persist)
-            self._lock_handle = open(self.lock_file, 'w')
+            # Open lock file - use 'a+' to not truncate existing content
+            # We'll truncate and write only after successfully acquiring the lock
+            self._lock_handle = open(self.lock_file, 'a+')
             
             # Try to acquire exclusive lock (non-blocking)
             if sys.platform == 'win32':
@@ -119,6 +123,11 @@ class InstanceLock:
                 try:
                     # Lock first byte of file (non-blocking)
                     msvcrt.locking(self._lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    if write_pid:
+                        self._lock_handle.seek(0)
+                        self._lock_handle.truncate()
+                        self._lock_handle.write(str(os.getpid()))
+                        self._lock_handle.flush()
                     return True
                 except IOError:
                     self._lock_handle.close()
@@ -130,6 +139,11 @@ class InstanceLock:
                 try:
                     # LOCK_EX = exclusive lock, LOCK_NB = non-blocking
                     fcntl.flock(self._lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    if write_pid:
+                        self._lock_handle.seek(0)
+                        self._lock_handle.truncate()
+                        self._lock_handle.write(str(os.getpid()))
+                        self._lock_handle.flush()
                     return True
                 except (IOError, OSError):
                     self._lock_handle.close()
@@ -205,22 +219,17 @@ class InstanceLock:
             # Ensure directory exists
             self.lock_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # First attempt to acquire lock
-            if self._try_acquire_lock():
+            # First attempt to acquire lock (with PID write)
+            if self._try_acquire_lock(write_pid=True):
                 self._acquired = True
-                # Write PID for debugging/diagnostics
-                self._lock_handle.write(str(os.getpid()))
-                self._lock_handle.flush()
                 logger.debug(f"Instance lock acquired (PID: {os.getpid()})")
                 return True
             
             # Lock failed - check if it's a stale lock from a dead process
             if self._check_and_clean_stale_lock():
                 # Stale lock cleaned up, try again
-                if self._try_acquire_lock():
+                if self._try_acquire_lock(write_pid=True):
                     self._acquired = True
-                    self._lock_handle.write(str(os.getpid()))
-                    self._lock_handle.flush()
                     logger.info("Instance lock acquired after cleaning stale lock")
                     return True
             

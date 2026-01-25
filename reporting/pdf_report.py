@@ -277,7 +277,9 @@ def _load_focus_statements() -> Dict[str, Any]:
         Dictionary with nested category structure:
         {category: {subcategory: [statements]}, emojis: {...}}
     """
-    statements_path = Path(__file__).parent.parent / 'data' / 'focus_statements.json'
+    # Import config for bundled data directory path
+    import config
+    statements_path = config.BUNDLED_DATA_DIR / 'focus_statements.json'
     try:
         with open(statements_path, 'r', encoding='utf-8') as f:
             return json.load(f)

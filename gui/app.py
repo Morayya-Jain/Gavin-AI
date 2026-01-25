@@ -4497,8 +4497,8 @@ By clicking 'I Understand', you acknowledge this data processing."""
         badge_text, message = config.UNFOCUSED_ALERT_MESSAGES[alert_index]
         
         def play_sound():
-            # Path to custom alert sound
-            sound_file = Path(__file__).parent.parent / "data" / "braindock_alert_sound.mp3"
+            # Path to custom alert sound (bundled with app)
+            sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.mp3"
             
             if not sound_file.exists():
                 logger.warning(f"Alert sound file not found: {sound_file}")
