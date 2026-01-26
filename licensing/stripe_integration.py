@@ -179,27 +179,50 @@ def _fix_ssl_certificates():
         
         def _patched_create_default_context(purpose=ssl.Purpose.SERVER_AUTH, *, cafile=None, capath=None, cadata=None):
             """Patched ssl.create_default_context that creates context manually."""
-            # Create SSLContext with appropriate protocol
-            if purpose == ssl.Purpose.SERVER_AUTH:
-                # Client verifying server
-                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                ctx.verify_mode = ssl.CERT_REQUIRED
-                ctx.check_hostname = True
-            else:
-                # Server context
-                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                ctx.verify_mode = ssl.CERT_NONE
-                ctx.check_hostname = False
+            # #region agent log
+            _debug_log("G", "stripe_integration.py:patch_called", "Patched create_default_context called", {"purpose": str(purpose), "cafile": cafile, "capath": capath, "cert_path_closure": cert_path})
+            # #endregion
             
-            # Set secure defaults (matching what create_default_context does)
-            ctx.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3
-            
-            # Load certificates - use provided cafile or our bundled cert
-            actual_cafile = cafile if cafile else cert_path
-            if actual_cafile or capath or cadata:
-                ctx.load_verify_locations(actual_cafile, capath, cadata)
-            
-            return ctx
+            try:
+                # Create SSLContext with appropriate protocol
+                if purpose == ssl.Purpose.SERVER_AUTH:
+                    # Client verifying server
+                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    ctx.verify_mode = ssl.CERT_REQUIRED
+                    ctx.check_hostname = True
+                else:
+                    # Server context
+                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    ctx.verify_mode = ssl.CERT_NONE
+                    ctx.check_hostname = False
+                
+                # #region agent log
+                _debug_log("G", "stripe_integration.py:context_created", "SSLContext created successfully", {})
+                # #endregion
+                
+                # Set secure defaults (matching what create_default_context does)
+                ctx.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3
+                
+                # Load certificates - use provided cafile or our bundled cert
+                actual_cafile = cafile if cafile else cert_path
+                file_exists = os.path.exists(actual_cafile) if actual_cafile else False
+                # #region agent log
+                _debug_log("G", "stripe_integration.py:before_load_verify", "About to load_verify_locations", {"actual_cafile": actual_cafile, "file_exists": file_exists, "capath": capath, "cadata_len": len(cadata) if cadata else 0})
+                # #endregion
+                
+                if actual_cafile or capath or cadata:
+                    ctx.load_verify_locations(actual_cafile, capath, cadata)
+                
+                # #region agent log
+                _debug_log("G", "stripe_integration.py:load_success", "load_verify_locations succeeded", {})
+                # #endregion
+                
+                return ctx
+            except Exception as e:
+                # #region agent log
+                _debug_log("G", "stripe_integration.py:patch_error", "Error in patched function", {"error": str(e), "error_type": type(e).__name__, "traceback": traceback.format_exc()[-800:]})
+                # #endregion
+                raise
         
         ssl.create_default_context = _patched_create_default_context
         # #region agent log
