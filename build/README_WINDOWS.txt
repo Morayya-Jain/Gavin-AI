@@ -37,7 +37,7 @@ Settings > Privacy > Camera
 GETTING STARTED
 ---------------
 1. Launch BrainDock.exe
-2. Enter your license key (if required)
+2. Complete payment via Stripe (if first launch)
 3. Click "Start Session" to begin focus tracking
 4. The app will monitor your presence and detect distractions
 5. Click "Stop Session" when done to generate your report

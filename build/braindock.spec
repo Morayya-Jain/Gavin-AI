@@ -37,7 +37,6 @@ datas = [
     # Data files
     (str(PROJECT_ROOT / 'data' / 'focus_statements.json'), 'data'),
     (str(PROJECT_ROOT / 'data' / 'braindock_alert_sound.mp3'), 'data'),
-    (str(PROJECT_ROOT / 'data' / 'license_keys.json'), 'data'),
     # Assets
     (str(PROJECT_ROOT / 'assets'), 'assets'),
     # Legal documents

@@ -288,40 +288,18 @@ def check_license_cli() -> bool:
     if license_manager.is_licensed():
         return True
     
-    # Not licensed - prompt for license key in CLI
+    # Not licensed - inform user to use GUI for payment
     print("\n" + "=" * 60)
     print("🔐 License Required")
     print("=" * 60)
     print("\nBrainDock requires a valid license to run.")
-    print("\nOptions:")
-    print("  1. Purchase at: https://braindock.app")
-    print("  2. Enter a license key below")
-    print("\n" + "-" * 60)
+    print("\nTo activate your license:")
+    print("  1. Run the GUI version: python main.py")
+    print("  2. Complete payment via Stripe")
+    print("  3. Then you can use CLI mode")
+    print("\n" + "=" * 60)
     
-    while True:
-        try:
-            key = input("\nEnter license key (or 'q' to quit): ").strip()
-            
-            if key.lower() == 'q':
-                print("\n👋 Goodbye!")
-                return False
-            
-            if not key:
-                print("Please enter a license key.")
-                continue
-            
-            # Try to activate with key
-            if license_manager.activate_with_key(key):
-                print("\n✅ License activated successfully!")
-                return True
-            else:
-                print("❌ Invalid license key. Please try again.")
-                
-        except KeyboardInterrupt:
-            print("\n\n👋 Goodbye!")
-            return False
-        except EOFError:
-            return False
+    return False
 
 
 def main_cli():

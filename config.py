@@ -291,5 +291,4 @@ STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true",
 
 # Licensing Configuration
 LICENSE_FILE = USER_DATA_DIR / "license.json"  # User's license (persists)
-LICENSE_KEYS_FILE = BUNDLED_DATA_DIR / "license_keys.json"  # Bundled valid keys (read-only)
 SKIP_LICENSE_CHECK = os.getenv("SKIP_LICENSE_CHECK", "").lower() in ("true", "1", "yes")

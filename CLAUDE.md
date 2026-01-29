@@ -109,7 +109,6 @@ GEMINI_VISION_MODEL = "gemini-2.0-flash"
 
 - `data/focus_statements.json`: **Required** - PDF feedback templates
 - `data/blocklist.json`: Screen monitoring blocklist (auto-created in user data dir)
-- `data/license_keys.json`: Valid license key hashes (shipped with app)
 
 User data stored in:
 - macOS: `~/Library/Application Support/BrainDock/`

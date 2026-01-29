@@ -3,8 +3,7 @@ Payment Screen for BrainDock.
 
 Displays a payment gate before app access, allowing users to:
 - Purchase via Stripe Checkout
-- Enter a license key
-- Apply a promo code
+- Verify previous payment with session ID
 """
 
 import tkinter as tk
@@ -298,7 +297,7 @@ class PaymentScreen:
     """
     Full-screen payment gate displayed before app access.
     
-    Shows purchase options, license key input, and verification status.
+    Shows purchase options and payment verification status.
     """
     
     def __init__(self, root: tk.Tk, on_success: Callable[[], None]):
@@ -347,6 +346,7 @@ class PaymentScreen:
         self.verify_button: Optional[RoundedButton] = None
         self.session_entry: Optional[StyledEntry] = None
         self.logo_image = None  # Keep reference to prevent garbage collection
+        self.btn_pay: Optional[RoundedButton] = None
         
         self._setup_ui()
         
@@ -374,7 +374,7 @@ class PaymentScreen:
 
         # Header (Logo)
         header_frame = tk.Frame(self.center_container, bg=COLORS["bg"])
-        header_frame.pack(fill="x", pady=(0, 40))
+        header_frame.pack(fill="x", pady=(0, 25))
         
         # Load and display logo
         logo_loaded = False
@@ -416,8 +416,7 @@ class PaymentScreen:
             title_label.pack() # Centered by default
         
         # Main Card Container - scale based on screen size
-        # Calculate scaled card size (minimum 400x440, maximum original 550x580)
-        base_card_width, base_card_height = 550, 580
+        base_card_width, base_card_height = 550, 420
         screen_scale = min(
             self.scaling_manager.screen_width / 1920,
             self.scaling_manager.screen_height / 1080,
@@ -437,28 +436,28 @@ class PaymentScreen:
         self.inner_frame.place(in_=self.card_bg, relx=0.5, y=inner_padding, anchor="n", width=self.card_width-inner_padding*2, height=self.card_height-inner_padding*2)
         
         # 1. Title Section
-        tk.Label(self.inner_frame, text="Activate Session", font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text_primary"]).pack(pady=(20, 15))
+        tk.Label(self.inner_frame, text="Activate Session", font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text_primary"]).pack(pady=(15, 10))
         
         price_text = "AUD 1.99"
         if hasattr(config, 'PRODUCT_PRICE_DISPLAY'):
             price_text = config.PRODUCT_PRICE_DISPLAY.split(" - ")[0] if " - " in config.PRODUCT_PRICE_DISPLAY else config.PRODUCT_PRICE_DISPLAY
 
         # Price label - unified styling, no hyphen
-        tk.Label(self.inner_frame, text=f"{price_text} · One-time payment for unlimited use", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 20))
+        tk.Label(self.inner_frame, text=f"{price_text} · One-time payment for unlimited use", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"]).pack(pady=(0, 15))
         
         # 2. Primary Action (Purchase)
         self.btn_pay = RoundedButton(
             self.inner_frame, 
             text="Pay via Card", 
             width=260, 
-            height=60, 
+            height=55, 
             bg_color=COLORS["button_bg"], 
             hover_color=COLORS["button_bg_hover"],
             text_color="#FFFFFF", 
             font_type="body_bold",
             command=self._on_purchase_click
         )
-        self.btn_pay.pack(pady=10)
+        self.btn_pay.pack(pady=8)
         
         # Stripe availability warning
         if not STRIPE_AVAILABLE:
@@ -482,38 +481,14 @@ class PaymentScreen:
         
         # 3. Divider
         div_frame = tk.Frame(self.inner_frame, bg=COLORS["surface"])
-        div_frame.pack(fill="x", pady=(25, 15), padx=15)
+        div_frame.pack(fill="x", pady=(20, 12), padx=15)
         
         tk.Frame(div_frame, bg=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
         tk.Label(div_frame, text="OR", font=FONTS["small"], bg=COLORS["surface"], fg=COLORS["text_secondary"], padx=15).pack(side="left")
         tk.Frame(div_frame, bg=COLORS["border"], height=1).pack(side="left", fill="x", expand=True)
         
-        # 4. License Key Section
-        tk.Label(self.inner_frame, text="Enter License Key", font=FONTS["body_bold"], bg=COLORS["surface"], fg=COLORS["text_primary"], anchor="w").pack(fill="x", pady=(10, 8), padx=15)
-        
-        license_row = tk.Frame(self.inner_frame, bg=COLORS["surface"])
-        license_row.pack(fill="x", padx=15)
-        
-        self.btn_activate = RoundedButton(
-            license_row, 
-            text="Activate", 
-            width=100, 
-            height=44, 
-            radius=12,
-            bg_color=COLORS["button_bg"], 
-            hover_color=COLORS["button_bg_hover"],
-            font_type="caption",
-            command=self._on_activate_key
-        )
-        self.btn_activate.pack(side="right", anchor="n")
-        
-        self.key_entry = StyledEntry(license_row, placeholder="XXXX-XXXX-XXXX-XXXX")
-        self.key_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), anchor="n")
-        self.key_entry.bind_return(self._on_activate_key)
-        self.key_entry.entry.bind("<Key>", self._clear_global_status, add="+")
-        
-        # 5. Stripe Session ID Section (always visible)
-        tk.Label(self.inner_frame, text="(Already paid?) Verify with Stripe session ID", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"], anchor="w").pack(fill="x", pady=(20, 8), padx=15)
+        # 4. Stripe Session ID Section (always visible)
+        tk.Label(self.inner_frame, text="(Already paid?) Verify with Stripe session ID", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["text_secondary"], anchor="w").pack(fill="x", pady=(15, 8), padx=15)
         
         verify_row = tk.Frame(self.inner_frame, bg=COLORS["surface"])
         verify_row.pack(fill="x", padx=15)
@@ -568,15 +543,6 @@ class PaymentScreen:
             is_success: Whether this is a success message (green).
         """
         # Handle input-specific messages
-        if "license key" in message.lower() and self.key_entry:
-            if is_error:
-                self.key_entry.show_error(message)
-            elif is_success:
-                self.key_entry.show_success(message)
-            else:
-                self.key_entry.show_info(message)
-            return
-            
         if "session id" in message.lower() and self.session_entry:
             if is_error:
                 self.session_entry.show_error(message)
@@ -790,7 +756,7 @@ class PaymentScreen:
                 messagebox.showerror(
                     "Payment Not Available",
                     "The payment system is not configured.\n\n"
-                    "Please contact support or use a license key."
+                    "Please contact support."
                 )
                 return
             
@@ -925,22 +891,6 @@ class PaymentScreen:
             error = info.get("error", "Payment not completed")
             # Include "session id" in message to route to input field
             self._update_status("Invalid session ID", is_error=True)
-    
-    def _on_activate_key(self):
-        """Handle license key activation."""
-        key = self.key_entry.get().strip() if self.key_entry else ""
-        
-        if not key:
-            self._update_status("Please enter a license key", is_error=True)
-            return
-        
-        # Validate and activate
-        if self.license_manager.activate_with_key(key):
-            # Include "license key" in message to route to input field
-            self._update_status("License key activated! Starting app...", is_success=True)
-            self.root.after(1000, self._activation_success)
-        else:
-            self._update_status("Invalid license key", is_error=True)
     
     def _activation_success(self):
         """Handle successful license activation."""

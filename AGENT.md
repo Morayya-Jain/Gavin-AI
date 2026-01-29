@@ -44,7 +44,7 @@
 DETECTION_FPS = 0.33                    # ~3s between camera API calls
 SCREEN_CHECK_INTERVAL = 3               # 3s between screen checks
 STRIPE_SECRET_KEY, STRIPE_PRICE_ID      # Payment (from .env)
-LICENSE_FILE, LICENSE_KEYS_FILE         # License paths
+LICENSE_FILE                            # License path
 SKIP_LICENSE_CHECK                      # Dev bypass
 ```
 
@@ -72,14 +72,12 @@ python3 main.py     # GUI launches, check ~/Downloads/ for PDF
 - `data/focus_statements.json` - **REQUIRED** - PDF feedback templates
 - `data/blocklist.json` - Screen monitoring blocklist (auto-created)
 - `data/license.json` - User license status (gitignored)
-- `data/license_keys.json` - Valid key hashes (shipped with app)
 
 ## Licensing & Payment
 
 - **Payment**: Stripe Checkout (one-time) - config keys in `.env`
-- **Bypass**: License keys (hashed in `license_keys.json`) or `SKIP_LICENSE_CHECK=true`
-- **Generate keys**: `python scripts/generate_license_keys.py --count 10 --add-to-file`
-- **Flow**: First launch → payment screen → Stripe/key → `license.json` → app starts
+- **Bypass**: `SKIP_LICENSE_CHECK=true` for development
+- **Flow**: First launch → payment screen → Stripe payment → `license.json` → app starts
 
 ## Add New Detection Type
 
