@@ -25,7 +25,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
 from licensing.license_manager import get_license_manager
 from licensing.stripe_integration import get_stripe_integration, STRIPE_AVAILABLE
-from gui.ui_components import RoundedButton, Card, StyledEntry, COLORS, FONTS
+from gui.ui_components import (
+    RoundedButton, Card, StyledEntry, COLORS, FONTS,
+    ScalingManager, REFERENCE_WIDTH, REFERENCE_HEIGHT, MIN_WIDTH, MIN_HEIGHT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +314,9 @@ class PaymentScreen:
         self.license_manager = get_license_manager()
         self.stripe = get_stripe_integration()
         
+        # Initialize scaling manager for responsive UI
+        self.scaling_manager = ScalingManager(self.root)
+        
         # Pending session for verification
         self._pending_session_id: Optional[str] = None
         
@@ -409,16 +415,26 @@ class PaymentScreen:
             )
             title_label.pack() # Centered by default
         
-        # Main Card Container - fixed height, no expansion needed
-        self.card_width = 550
-        self.card_height = 580
+        # Main Card Container - scale based on screen size
+        # Calculate scaled card size (minimum 400x440, maximum original 550x580)
+        base_card_width, base_card_height = 550, 580
+        screen_scale = min(
+            self.scaling_manager.screen_width / 1920,
+            self.scaling_manager.screen_height / 1080,
+            1.0
+        )
+        screen_scale = max(screen_scale, 0.75)  # Minimum 75% scale for payment screen
+        
+        self.card_width = int(base_card_width * screen_scale)
+        self.card_height = int(base_card_height * screen_scale)
         
         self.card_bg = Card(self.center_container, width=self.card_width, height=self.card_height, bg_color=COLORS["surface"])
         self.card_bg.pack()
         
         # Inner Frame for widgets (placed on top of the card canvas)
+        inner_padding = int(30 * screen_scale)
         self.inner_frame = tk.Frame(self.center_container, bg=COLORS["surface"])
-        self.inner_frame.place(in_=self.card_bg, relx=0.5, y=25, anchor="n", width=self.card_width-60, height=self.card_height-60)
+        self.inner_frame.place(in_=self.card_bg, relx=0.5, y=inner_padding, anchor="n", width=self.card_width-inner_padding*2, height=self.card_height-inner_padding*2)
         
         # 1. Title Section
         tk.Label(self.inner_frame, text="Activate Session", font=FONTS["heading"], bg=COLORS["surface"], fg=COLORS["text_primary"]).pack(pady=(20, 15))

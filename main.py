@@ -397,11 +397,21 @@ Examples:
             # For GUI mode, show a dialog that appears in front
             try:
                 import tkinter as tk
+                from gui.ui_components import get_screen_scale_factor, normalize_tk_scaling
                 
                 # Create a custom topmost dialog instead of using messagebox
                 root = tk.Tk()
                 root.title("BrainDock Already Running")
-                root.geometry("400x180")
+                
+                # Normalize tk scaling for consistent rendering in bundled apps
+                normalize_tk_scaling(root)
+                
+                # Calculate scaled dialog size based on screen
+                screen_scale = get_screen_scale_factor(root)
+                dialog_width = int(400 * screen_scale)
+                dialog_height = int(180 * screen_scale)
+                
+                root.geometry(f"{dialog_width}x{dialog_height}")
                 root.resizable(False, False)
                 
                 # Force to front on all platforms
@@ -418,9 +428,9 @@ Examples:
                 root.update_idletasks()
                 
                 # Center on screen
-                x = (root.winfo_screenwidth() - 400) // 2
-                y = (root.winfo_screenheight() - 180) // 2
-                root.geometry(f"400x180+{x}+{y}")
+                x = (root.winfo_screenwidth() - dialog_width) // 2
+                y = (root.winfo_screenheight() - dialog_height) // 2
+                root.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
                 
                 # Error icon and message
                 frame = tk.Frame(root, padx=20, pady=20)

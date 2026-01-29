@@ -6,7 +6,8 @@ import base64
 import json
 import logging
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
+import threading
 
 from openai import OpenAI
 
@@ -52,7 +53,8 @@ class VisionDetector:
         
         self.client = OpenAI(api_key=self.api_key)
         
-        # Cache for reducing API calls
+        # Cache for reducing API calls (thread-safe)
+        self._cache_lock = threading.Lock()
         self.last_detection_time = 0
         self.last_detection_result = None
         self.detection_cache_duration = 3.0  # Cache for 3 seconds (matches detection interval)
@@ -148,7 +150,7 @@ RULES:
 - Default to gadget_visible=false unless you are CERTAIN
 - False negatives are acceptable, false positives are NOT"""
     
-    def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, any]:
+    def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
         Analyze frame using OpenAI Vision API.
         
@@ -176,11 +178,12 @@ RULES:
             - Device ON TABLE: Only True if screen lit AND user looking at it
             - Device face-down or screen off on table: Always False
         """
-        # Check cache
+        # Check cache (thread-safe)
         current_time = time.time()
-        if use_cache and self.last_detection_result and \
-           (current_time - self.last_detection_time) < self.detection_cache_duration:
-            return self.last_detection_result
+        with self._cache_lock:
+            if use_cache and self.last_detection_result is not None and \
+               (current_time - self.last_detection_time) < self.detection_cache_duration:
+                return self.last_detection_result
         
         try:
             # Encode frame
@@ -258,9 +261,10 @@ RULES:
                 "distraction_type": result.get("distraction_type", "none")
             }
             
-            # Cache result
-            self.last_detection_result = detection_result
-            self.last_detection_time = current_time
+            # Cache result (thread-safe)
+            with self._cache_lock:
+                self.last_detection_result = detection_result
+                self.last_detection_time = current_time
             
             # Log detection
             if detection_result["gadget_visible"]:

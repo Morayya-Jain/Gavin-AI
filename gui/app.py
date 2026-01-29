@@ -314,11 +314,21 @@ COLORS = get_colors()
 # Assets directory for logos (bundled with app)
 ASSETS_DIR = config.BASE_DIR / "assets"
 
-# Base dimensions for scaling (larger default window)
-BASE_WIDTH = 1300
-BASE_HEIGHT = 950
-MIN_WIDTH = 600
-MIN_HEIGHT = 500
+# Import scaling system from ui_components
+from gui.ui_components import (
+    ScalingManager, 
+    REFERENCE_WIDTH, 
+    REFERENCE_HEIGHT, 
+    MIN_WIDTH, 
+    MIN_HEIGHT,
+    FONT_BOUNDS,
+    get_screen_scale_factor,
+    normalize_tk_scaling
+)
+
+# Base dimensions for scaling (larger default window) - keep for backward compat
+BASE_WIDTH = REFERENCE_WIDTH
+BASE_HEIGHT = REFERENCE_HEIGHT
 
 
 # --- Font System with Fallback ---
@@ -623,7 +633,7 @@ class Badge(tk.Canvas):
         points = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
         return self.create_polygon(points, smooth=True, **kwargs)
 
-    def configure_badge(self, text=None, bg_color=None, fg_color=None):
+    def configure_badge(self, text=None, bg_color=None, fg_color=None, font=None):
         """Update badge styling and text."""
         if text:
             self.text = text
@@ -631,6 +641,8 @@ class Badge(tk.Canvas):
             self.bg_color = bg_color
         if fg_color:
             self.text_color = fg_color
+        if font:
+            self.font = font
         self.draw()
 
     def bind_click(self, callback):
@@ -782,7 +794,7 @@ class NotificationPopup:
         self.window.overrideredirect(True)  # Borderless window
         self.window.attributes('-topmost', True)  # Always on top
         
-        # Popup dimensions (compact card)
+        # Fixed popup dimensions (no scaling - should remain consistent)
         self.popup_width = 300
         self.popup_height = 215
         
@@ -1153,23 +1165,23 @@ class BrainDockGUI:
         if sys.platform == "darwin":
             self._set_macos_light_mode()
         
-        # Window size and positioning - center on screen
-        # Update to ensure accurate screen dimensions
-        self.root.update_idletasks()
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        x = (screen_width - BASE_WIDTH) // 2
-        y = (screen_height - BASE_HEIGHT) // 2
-        self.root.geometry(f"{BASE_WIDTH}x{BASE_HEIGHT}+{x}+{y}")
+        # Initialize scaling manager for responsive UI
+        self.scaling_manager = ScalingManager(self.root)
+        
+        # Calculate initial window size based on screen dimensions
+        initial_width, initial_height = self.scaling_manager.get_initial_window_size()
+        x, y = self.scaling_manager.get_centered_position(initial_width, initial_height)
+        self.root.geometry(f"{initial_width}x{initial_height}+{x}+{y}")
         
         # Enable resizing with minimum size
         self.root.resizable(True, True)
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
         
-        # Track current scale for font adjustments
-        self.current_scale = 1.0
-        self._last_width = BASE_WIDTH
-        self._last_height = BASE_HEIGHT
+        # Calculate and set initial scale based on actual window dimensions
+        self.current_scale = self.scaling_manager.calculate_scale(initial_width, initial_height)
+        self.scaling_manager.set_scale(self.current_scale)  # Sync scaling manager's internal scale
+        self._last_width = initial_width
+        self._last_height = initial_height
         
         # State variables
         self.session: Optional[Session] = None
@@ -1263,46 +1275,60 @@ class BrainDockGUI:
         except Exception as e:
             logger.debug(f"Could not set macOS light mode: {e}")
     
-    def _create_fonts(self):
-        """Create custom fonts for the UI with fixed sizes."""
+    def _create_fonts(self, scale: float = None):
+        """
+        Create custom fonts for the UI with scalable sizes.
+        
+        Args:
+            scale: Optional scale factor. If None, uses current_scale.
+        """
+        if scale is None:
+            scale = self.current_scale
+        
         # Seraphic Design Fonts
         font_display = "Georgia"
         font_interface = "Helvetica"
         
+        # Helper to get scaled font size with bounds
+        def get_scaled_size(font_key: str) -> int:
+            base_size, min_size, max_size = FONT_BOUNDS.get(font_key, (14, 11, 18))
+            scaled = int(base_size * scale)
+            return max(min_size, min(scaled, max_size))
+        
         self.font_title = tkfont.Font(
-            family=font_display, size=24, weight="bold"
+            family=font_display, size=get_scaled_size("title"), weight="bold"
         )
         
         self.font_stat = tkfont.Font(
-            family=font_display, size=28, weight="bold"
+            family=font_display, size=get_scaled_size("stat"), weight="bold"
         )
         
         self.font_timer = tkfont.Font(
-            family=font_display, size=64, weight="bold"
+            family=font_display, size=get_scaled_size("timer"), weight="bold"
         )
         
         self.font_status = tkfont.Font(
-            family=font_interface, size=24, weight="bold"
+            family=font_interface, size=get_scaled_size("status"), weight="bold"
         )
         
         self.font_button = tkfont.Font(
-            family=font_interface, size=14, weight="bold"
+            family=font_interface, size=get_scaled_size("button"), weight="bold"
         )
         
         self.font_small = tkfont.Font(
-            family=font_interface, size=12, weight="normal"
+            family=font_interface, size=get_scaled_size("small"), weight="normal"
         )
         
         self.font_badge = tkfont.Font(
-            family=font_interface, size=12, weight="bold"
+            family=font_interface, size=get_scaled_size("badge"), weight="bold"
         )
         
         self.font_caption = tkfont.Font(
-            family=font_interface, size=12, weight="bold"
+            family=font_interface, size=get_scaled_size("caption"), weight="bold"
         )
         
         self.font_body = tkfont.Font(
-            family=font_interface, size=14, weight="normal"
+            family=font_interface, size=get_scaled_size("body"), weight="normal"
         )
     
     
@@ -1310,7 +1336,8 @@ class BrainDockGUI:
         """
         Handle window resize event - scale UI components proportionally.
         
-        Note: Font sizes stay fixed. Only buttons and containers scale.
+        Scales fonts, buttons, padding, and other UI elements based on
+        window dimensions while maintaining minimum readable sizes.
         
         Args:
             event: Configure event with new dimensions
@@ -1327,13 +1354,17 @@ class BrainDockGUI:
         self._last_height = event.height
         
         # Calculate scale based on both dimensions
-        width_scale = event.width / BASE_WIDTH
-        height_scale = event.height / BASE_HEIGHT
-        new_scale = min(width_scale, height_scale)
+        new_scale = self.scaling_manager.calculate_scale(event.width, event.height)
         
-        # Update if scale changed significantly
-        if abs(new_scale - self.current_scale) > 0.05:
+        # Update the scaling manager's scale for popup sizing
+        self.scaling_manager.set_scale(new_scale)
+        
+        # Use smaller threshold (3%) for smoother scaling transitions
+        if abs(new_scale - self.current_scale) > 0.03:
             self.current_scale = new_scale
+            
+            # Recreate fonts with new scale
+            self._create_fonts(new_scale)
             
             # Scale buttons proportionally (but keep minimum size)
             new_btn_width = max(160, int(240 * new_scale))
@@ -1344,6 +1375,83 @@ class BrainDockGUI:
             
             if hasattr(self, 'pause_btn'):
                 self.pause_btn.configure(width=new_btn_width, height=new_btn_height)
+            
+            # Scale camera card dimensions
+            if hasattr(self, 'camera_card'):
+                new_camera_width = max(280, int(400 * new_scale))
+                new_camera_height = max(168, int(240 * new_scale))
+                self.camera_card.configure(width=new_camera_width, height=new_camera_height)
+                self.camera_card.draw()
+            
+            # Scale stat cards BEFORE applying fonts (so card["width"] is correct)
+            if hasattr(self, 'stat_cards'):
+                for card_type, card_data in self.stat_cards.items():
+                    if 'card' in card_data:
+                        new_card_width = max(200, int(280 * new_scale))
+                        new_card_height = max(85, int(120 * new_scale))
+                        card_data['card'].configure(width=new_card_width, height=new_card_height)
+                        # Don't call draw() here - _apply_scaled_fonts() will handle drawing and text creation
+            
+            # Apply scaled fonts to UI elements (creates stat card text with correct positions)
+            self._apply_scaled_fonts()
+    
+    def _apply_scaled_fonts(self):
+        """Apply the scaled fonts to all UI elements that use them."""
+        # Update timer label font
+        if hasattr(self, 'timer_label'):
+            self.timer_label.configure(font=self.font_timer)
+        
+        # Update timer sub label font
+        if hasattr(self, 'timer_sub_label'):
+            self.timer_sub_label.configure(font=self.font_caption)
+        
+        # Update time badge font
+        if hasattr(self, 'time_badge'):
+            self.time_badge.configure_badge(font=self.font_badge)
+        
+        # Update camera card status text font
+        if hasattr(self, 'camera_card'):
+            self.camera_card.font = self.font_status
+            self.camera_card.draw()
+        
+        # Update stat cards fonts
+        if hasattr(self, 'stat_cards'):
+            for card_type, card_data in self.stat_cards.items():
+                if 'card' in card_data:
+                    # Redraw card with new fonts
+                    card = card_data['card']
+                    card.delete("all")
+                    card.draw()
+                    
+                    # Re-create text elements with scaled fonts
+                    # Card body has asymmetric padding (2px left, 6px right), so visual center is offset by -2
+                    center_x = (int(card["width"]) // 2) - 2
+                    
+                    # Get title and value based on card type
+                    if card_type == "focus":
+                        title = "TODAY'S FOCUS"
+                    elif card_type == "distractions":
+                        title = "TODAY'S DISTRACTIONS"
+                    else:
+                        title = "TODAY'S FOCUS RATE"
+                    
+                    # Title
+                    card.create_text(
+                        center_x, int(30 * self.current_scale), 
+                        text=title, 
+                        anchor="center", 
+                        font=self.font_caption, 
+                        fill=COLORS["text_secondary"]
+                    )
+                    
+                    # Main value - store item ID for updates
+                    card_data["main"] = card.create_text(
+                        center_x, int(72 * self.current_scale), 
+                        text="0m" if card_type != "rate" else "0%", 
+                        anchor="center", 
+                        font=self.font_stat, 
+                        fill=COLORS["text_primary"]
+                    )
     
     def _get_current_status_color(self) -> str:
         """Get the color for the current status."""
@@ -1449,13 +1557,16 @@ class BrainDockGUI:
         
         # Camera Preview Card
         camera_container = tk.Frame(self.controls_container, bg=COLORS["bg_primary"])
-        camera_container.pack(pady=(0, 40))
+        camera_container.pack(pady=(0, self.scaling_manager.scale_padding(40)))
         
         # Camera card now acts as the status display
+        # Scale dimensions based on current scale
+        camera_width = max(280, int(400 * self.current_scale))
+        camera_height = max(168, int(240 * self.current_scale))
         self.camera_card = Card(
             camera_container, 
-            width=400, 
-            height=240, 
+            width=camera_width, 
+            height=camera_height, 
             bg_color=COLORS["bg_tertiary"],
             text="Ready to Start",
             text_color=COLORS["status_idle"],
@@ -1479,26 +1590,28 @@ class BrainDockGUI:
         )
         self.timer_sub_label.pack(pady=(12, 40))
 
-        # Start Button
+        # Start Button - scale dimensions based on current scale
+        btn_width = max(160, int(240 * self.current_scale))
+        btn_height = max(46, int(64 * self.current_scale))
         self.start_stop_btn = RoundedButton(
             timer_frame,
             text="Start Session",
-            width=240,
-            height=64,
+            width=btn_width,
+            height=btn_height,
             bg_color=COLORS["button_start"],
             hover_color=COLORS["status_focused"],  # Green hover
             text_color="#FFFFFF",
             font=self.font_button,
             command=self._toggle_session
         )
-        self.start_stop_btn.pack(pady=10)
+        self.start_stop_btn.pack(pady=self.scaling_manager.scale_padding(10))
         
         # Pause button (hidden initially)
         self.pause_btn = RoundedButton(
             timer_frame,
             text="Pause Session",
-            width=240,
-            height=64,
+            width=btn_width,
+            height=btn_height,
             bg_color=COLORS["button_pause"],
             text_color="#FFFFFF",
             font=self.font_button,
@@ -1528,16 +1641,16 @@ class BrainDockGUI:
         l1 = tk.Label(link_container, text="Blocklist Settings", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"], cursor="")
         l1.pack(side=tk.LEFT, padx=10)
         l1.bind("<Button-1>", lambda e: self._show_blocklist_settings())
-        l1.bind("<Enter>", lambda e: l1.config(fg=COLORS["button_resume_hover"]))
-        l1.bind("<Leave>", lambda e: l1.config(fg=COLORS["text_secondary"]))
+        l1.bind("<Enter>", lambda e: l1.config(fg=COLORS["button_resume_hover"], font=(self.font_small.cget("family"), self.font_small.cget("size"), "normal", "underline")))
+        l1.bind("<Leave>", lambda e: l1.config(fg=COLORS["text_secondary"], font=self.font_small))
         
         tk.Label(link_container, text="•", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT)
         
         l2 = tk.Label(link_container, text="How To Use", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"], cursor="")
         l2.pack(side=tk.LEFT, padx=10)
         l2.bind("<Button-1>", lambda e: self._show_tutorial())
-        l2.bind("<Enter>", lambda e: l2.config(fg=COLORS["button_resume_hover"]))
-        l2.bind("<Leave>", lambda e: l2.config(fg=COLORS["text_secondary"]))
+        l2.bind("<Enter>", lambda e: l2.config(fg=COLORS["button_resume_hover"], font=(self.font_small.cget("family"), self.font_small.cget("size"), "normal", "underline")))
+        l2.bind("<Leave>", lambda e: l2.config(fg=COLORS["text_secondary"], font=self.font_small))
         
         # Status Badge removed - integrated into camera card
 
@@ -1546,13 +1659,15 @@ class BrainDockGUI:
         """Create a minimal stat card with just title and value."""
         wrapper = tk.Frame(parent, bg=COLORS["bg_primary"])
         # Use pack for vertical stacking in stats_container
-        wrapper.pack(pady=5)
+        wrapper.pack(pady=self.scaling_manager.scale_padding(5))
         
-        # Compact card dimensions
-        card_width = 280
-        center_x = card_width // 2
+        # Compact card dimensions - scale based on current scale
+        card_width = max(200, int(280 * self.current_scale))
+        card_height = max(85, int(120 * self.current_scale))
+        # Card body has asymmetric padding (2px left, 6px right), so visual center is offset by -2
+        center_x = (card_width // 2) - 2
         
-        card = Card(wrapper, width=card_width, height=120)
+        card = Card(wrapper, width=card_width, height=card_height)
         card.pack()
         
         # Initialize storage for this card type
@@ -1574,12 +1689,12 @@ class BrainDockGUI:
             sub_label = ""
             sub_val = ""
         
-        # Title (Centered at top)
-        card.create_text(center_x, 30, text=title, anchor="center", font=self.font_caption, fill=COLORS["text_secondary"])
+        # Title (Centered at top) - scale y-position to match card dimensions
+        card.create_text(center_x, int(30 * self.current_scale), text=title, anchor="center", font=self.font_caption, fill=COLORS["text_secondary"])
         
-        # Main Value (Large, centered)
+        # Main Value (Large, centered) - scale y-position to match card dimensions
         self.stat_cards[card_type]["main"] = card.create_text(
-            center_x, 72, text=main_val, anchor="center", font=self.font_stat, fill=COLORS["text_primary"]
+            center_x, int(72 * self.current_scale), text=main_val, anchor="center", font=self.font_stat, fill=COLORS["text_primary"]
         )
         
         # Sub-stats (Only for Focus and Distractions)
@@ -1949,29 +2064,97 @@ class BrainDockGUI:
         Show the blocklist settings dialog.
         
         Allows users to enable/disable preset categories and add custom patterns.
+        Uses scrolling for content with fixed buttons at the bottom.
         """
-        # Create settings window (larger to accommodate separate URL/App fields)
+        # Create settings window - scale based on current main window size
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Blocklist Settings")
         settings_window.configure(bg=COLORS["bg_primary"])
-        settings_window.geometry("550x850")
-        settings_window.resizable(False, False)
+        
+        # Scale popup size based on the main window's current size
+        # Use 85% of main window dimensions, with reasonable min/max bounds
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+        
+        popup_width = max(380, min(550, int(main_width * 0.85)))
+        popup_height = max(450, min(750, int(main_height * 0.85)))
+        
+        settings_window.geometry(f"{popup_width}x{popup_height}")
+        settings_window.resizable(True, True)
+        settings_window.minsize(380, 450)
         
         # Center on parent window
         settings_window.transient(self.root)
         settings_window.grab_set()
         
-        x = self.root.winfo_x() + (self.root.winfo_width() - 550) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 850) // 2
+        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
         settings_window.geometry(f"+{x}+{y}")
         
-        # Main container with padding
+        # Main container - holds scrollable area and fixed buttons
         main_container = tk.Frame(settings_window, bg=COLORS["bg_primary"])
-        main_container.pack(fill=tk.BOTH, expand=True, padx=40, pady=20)
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # --- Scrollable content area ---
+        # Create canvas with scrollbar for the content
+        canvas_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 0))
+        
+        canvas = tk.Canvas(canvas_frame, bg=COLORS["bg_primary"], highlightthickness=0)
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        
+        # Scrollable frame inside canvas
+        scrollable_frame = tk.Frame(canvas, bg=COLORS["bg_primary"])
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Make scrollable frame expand to canvas width
+        def configure_canvas_width(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", configure_canvas_width)
+        
+        # Enable smooth mousewheel scrolling (same approach as tutorial popup)
+        def _on_mousewheel(event):
+            if sys.platform == "darwin":
+                # macOS: delta is typically small integers, scroll proportionally
+                # Negative delta = scroll down, positive = scroll up
+                scroll_amount = -event.delta * 0.01  # Small fraction for smooth scroll
+            else:
+                # Windows/Linux: delta is typically 120 per notch
+                scroll_amount = -event.delta / 120 * 0.05  # Smooth scroll factor
+            
+            # Get current position and adjust
+            current_pos = canvas.yview()[0]
+            new_pos = max(0, min(1, current_pos + scroll_amount))
+            canvas.yview_moveto(new_pos)
+        
+        # Bind mousewheel to canvas and scrollable frame
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Helper to bind mousewheel to all child widgets
+        def _bind_mousewheel_to_children(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                _bind_mousewheel_to_children(child)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # --- Content inside scrollable frame ---
+        content_padding = tk.Frame(scrollable_frame, bg=COLORS["bg_primary"])
+        content_padding.pack(fill=tk.BOTH, expand=True, padx=20)
         
         # Title
         title = tk.Label(
-            main_container,
+            content_padding,
             text="Blocklist Settings",
             font=self.font_title,
             fg=COLORS["accent_primary"],
@@ -1980,17 +2163,17 @@ class BrainDockGUI:
         title.pack(pady=(0, 5))
         
         subtitle = tk.Label(
-            main_container,
+            content_padding,
             text="Configure which sites/apps to block",
             font=self.font_small,
             fg=COLORS["text_secondary"],
             bg=COLORS["bg_primary"]
         )
-        subtitle.pack(pady=(0, 25))
+        subtitle.pack(pady=(0, 20))
         
         # Categories section
         categories_label = tk.Label(
-            main_container,
+            content_padding,
             text="Preset Categories",
             font=self.font_status,
             fg=COLORS["text_primary"],
@@ -2000,15 +2183,15 @@ class BrainDockGUI:
         
         # Category toggles
         self.category_vars = {}
-        categories_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        categories_frame.pack(fill=tk.X, pady=(0, 20))
+        categories_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
+        categories_frame.pack(fill=tk.X, pady=(0, 15))
         
         for cat_id, cat_data in PRESET_CATEGORIES.items():
             var = tk.BooleanVar(value=cat_id in self.blocklist.enabled_categories)
             self.category_vars[cat_id] = var
             
             row = tk.Frame(categories_frame, bg=COLORS["bg_primary"])
-            row.pack(fill=tk.X, pady=4)
+            row.pack(fill=tk.X, pady=3)
             
             cb = tk.Checkbutton(
                 row,
@@ -2030,18 +2213,16 @@ class BrainDockGUI:
                 text=f"({len(cat_data['patterns'])} sites)",
                 font=self.font_small,
                 fg=COLORS["accent_primary"],
-                bg=COLORS["bg_primary"],
-                cursor="hand2"
+                bg=COLORS["bg_primary"]
             )
             desc.pack(side=tk.LEFT, padx=(8, 0))
-            # Bind click to show sites popup
             desc.bind("<Button-1>", lambda e, c=cat_id, d=cat_data: self._show_category_sites(c, d))
             desc.bind("<Enter>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_warm"]))
             desc.bind("<Leave>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_primary"]))
         
         # --- Custom URLs section ---
         urls_label = tk.Label(
-            main_container,
+            content_padding,
             text="Custom URLs/Domains",
             font=self.font_status,
             fg=COLORS["text_primary"],
@@ -2050,7 +2231,7 @@ class BrainDockGUI:
         urls_label.pack(anchor="w", pady=(10, 5))
         
         urls_help = tk.Label(
-            main_container,
+            content_padding,
             text="Add website URLs to block (e.g., example.com)",
             font=self.font_small,
             fg=COLORS["text_secondary"],
@@ -2058,8 +2239,8 @@ class BrainDockGUI:
         )
         urls_help.pack(anchor="w", pady=(0, 5))
         
-        # URLs text area with validation feedback
-        urls_frame = tk.Frame(main_container, bg=COLORS["bg_secondary"], padx=1, pady=1)
+        # URLs text area
+        urls_frame = tk.Frame(content_padding, bg=COLORS["bg_secondary"], padx=1, pady=1)
         urls_frame.pack(fill=tk.X, pady=(0, 5))
         
         self.custom_urls_text = tk.Text(
@@ -2076,9 +2257,9 @@ class BrainDockGUI:
         )
         self.custom_urls_text.pack(fill=tk.X)
         
-        # URL validation status label with tooltip for full message
+        # URL validation status label
         self.url_validation_label = tk.Label(
-            main_container,
+            content_padding,
             text="",
             font=self.font_small,
             fg=COLORS["text_secondary"],
@@ -2093,7 +2274,7 @@ class BrainDockGUI:
         
         # --- Custom Apps section ---
         apps_label = tk.Label(
-            main_container,
+            content_padding,
             text="Custom App Names",
             font=self.font_status,
             fg=COLORS["text_primary"],
@@ -2102,7 +2283,7 @@ class BrainDockGUI:
         apps_label.pack(anchor="w", pady=(15, 5))
         
         apps_help = tk.Label(
-            main_container,
+            content_padding,
             text="Add desktop app names to block (e.g., Steam, Discord)",
             font=self.font_small,
             fg=COLORS["text_secondary"],
@@ -2110,8 +2291,8 @@ class BrainDockGUI:
         )
         apps_help.pack(anchor="w", pady=(0, 5))
         
-        # Apps text area with validation feedback
-        apps_frame = tk.Frame(main_container, bg=COLORS["bg_secondary"], padx=1, pady=1)
+        # Apps text area
+        apps_frame = tk.Frame(content_padding, bg=COLORS["bg_secondary"], padx=1, pady=1)
         apps_frame.pack(fill=tk.X, pady=(0, 5))
         
         self.custom_apps_text = tk.Text(
@@ -2128,9 +2309,9 @@ class BrainDockGUI:
         )
         self.custom_apps_text.pack(fill=tk.X)
         
-        # App validation status label with tooltip for full message
+        # App validation status label
         self.app_validation_label = tk.Label(
-            main_container,
+            content_padding,
             text="",
             font=self.font_small,
             fg=COLORS["text_secondary"],
@@ -2143,13 +2324,13 @@ class BrainDockGUI:
         if self.blocklist.custom_apps:
             self.custom_apps_text.insert("1.0", "\n".join(self.blocklist.custom_apps))
         
-        # Bind validation on text change (for real-time feedback)
+        # Bind validation on text change
         self.custom_urls_text.bind("<KeyRelease>", lambda e: self._validate_urls_realtime())
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
-        # AI Fallback option (advanced) - OFF BY DEFAULT
-        ai_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        ai_frame.pack(fill=tk.X, pady=(20, 20))
+        # AI Fallback option
+        ai_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
+        ai_frame.pack(fill=tk.X, pady=(15, 20))
         
         self.ai_fallback_var = tk.BooleanVar(value=self.use_ai_fallback)
         ai_cb = tk.Checkbutton(
@@ -2174,9 +2355,9 @@ class BrainDockGUI:
         )
         ai_help.pack(anchor="w", padx=(24, 0))
         
-        # Buttons - centered at bottom
+        # --- Fixed buttons at bottom (outside scrollable area) ---
         button_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        button_frame.pack(fill=tk.X, pady=(20, 0))
+        button_frame.pack(fill=tk.X, pady=(15, 20), padx=40)
         
         # Center the buttons
         button_container = tk.Frame(button_frame, bg=COLORS["bg_primary"])
@@ -2209,6 +2390,12 @@ class BrainDockGUI:
             height=48
         )
         cancel_btn.pack(side=tk.LEFT)
+        
+        # Bind mousewheel to all children in scrollable area
+        _bind_mousewheel_to_children(scrollable_frame)
+        
+        # Window close handler
+        settings_window.protocol("WM_DELETE_WINDOW", settings_window.destroy)
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -2231,18 +2418,21 @@ class BrainDockGUI:
             category_id: The category ID
             cat_data: Category data dictionary with patterns
         """
-        # Create a small popup window
+        # Create a small popup window - scale based on screen size
         sites_popup = tk.Toplevel(self.root)
         sites_popup.title(f"{cat_data['name']} Sites")
         sites_popup.configure(bg=COLORS["bg_primary"])
-        sites_popup.geometry("320x320")
+        
+        # Calculate scaled popup size based on screen
+        popup_width, popup_height = self.scaling_manager.get_popup_size(320, 320)
+        sites_popup.geometry(f"{popup_width}x{popup_height}")
         sites_popup.resizable(False, False)
         
         # Center on parent
         sites_popup.transient(self.root)
         self.root.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() - 320) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 320) // 2
+        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
         sites_popup.geometry(f"+{x}+{y}")
         
         # Make modal to ensure proper event handling
@@ -3263,13 +3453,15 @@ class BrainDockGUI:
         - Pause/Resume
         - Reports
         """
-        # Create tutorial window (larger size for better readability)
+        # Create tutorial window - scale based on screen size
         tutorial_window = tk.Toplevel(self.root)
         tutorial_window.title("How to Use BrainDock")
         tutorial_window.configure(bg=COLORS["bg_primary"])
         
-        window_width = 680
-        window_height = 640
+        # Calculate scaled popup size with minimum height to ensure buttons visible
+        window_width, window_height = self.scaling_manager.get_popup_size(
+            680, 640, min_width=480, min_height=520
+        )
         tutorial_window.geometry(f"{window_width}x{window_height}")
         tutorial_window.resizable(False, False)
         
@@ -3722,20 +3914,16 @@ class BrainDockGUI:
     
     def _show_password_dialog(self):
         """Show dialog to enter unlock password."""
-        # Create dialog window
+        # Create dialog window - scale based on screen size
         dialog = tk.Toplevel(self.root)
         dialog.title("Unlock More Time")
         dialog.configure(bg=COLORS["bg_primary"])
         dialog.resizable(False, False)
         
-        # Size and position - center on screen (like main BrainDock UI)
-        dialog_width = 350
-        dialog_height = 200
+        # Size and position - scale based on screen and center
+        dialog_width, dialog_height = self.scaling_manager.get_popup_size(350, 200)
         dialog.update_idletasks()
-        screen_width = dialog.winfo_screenwidth()
-        screen_height = dialog.winfo_screenheight()
-        x = (screen_width - dialog_width) // 2
-        y = (screen_height - dialog_height) // 2
+        x, y = self.scaling_manager.get_centered_position(dialog_width, dialog_height)
         dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         
         # Make modal
@@ -4592,8 +4780,8 @@ class BrainDockGUI:
         
         status, text = status_map.get(event_type, ("idle", "Unknown"))
         
-        # Schedule UI update on main thread
-        self.root.after(0, lambda: self._update_status(status, text))
+        # Schedule UI update on main thread (capture values to avoid closure issues)
+        self.root.after(0, lambda s=status, t=text: self._update_status(s, t))
     
     def _get_distraction_label(self, distraction_source: str) -> str:
         """
@@ -4762,8 +4950,8 @@ class BrainDockGUI:
         # Play sound first (synchronously start the process)
         play_sound()
         
-        # Show notification popup immediately after sound starts
-        self.root.after(100, lambda: self._show_alert_popup(badge_text, message))
+        # Show notification popup immediately after sound starts (capture values)
+        self.root.after(100, lambda b=badge_text, m=message: self._show_alert_popup(b, m))
         
         logger.info(f"Unfocused alert #{self.alerts_played + 1} played")
     
@@ -5053,6 +5241,7 @@ def main():
         
         # Show error dialog
         root = tk.Tk()
+        normalize_tk_scaling(root)  # Normalize for consistent font rendering
         root.withdraw()
         messagebox.showerror(
             "BrainDock Already Running",
@@ -5073,15 +5262,16 @@ def main():
         # Create a temporary root window for payment screen
         # Use same dimensions as main GUI
         payment_root = tk.Tk()
+        normalize_tk_scaling(payment_root)  # Normalize for consistent font rendering
         payment_root.title("BrainDock - Activate License")
         payment_root.configure(bg=COLORS["bg_primary"])
         
         # Set size and center the window (same as main GUI)
-        screen_width = payment_root.winfo_screenwidth()
-        screen_height = payment_root.winfo_screenheight()
-        x = (screen_width - BASE_WIDTH) // 2
-        y = (screen_height - BASE_HEIGHT) // 2
-        payment_root.geometry(f"{BASE_WIDTH}x{BASE_HEIGHT}+{x}+{y}")
+        # Use ScalingManager for proper screen dimension handling
+        scaling_mgr = ScalingManager(payment_root)
+        initial_width, initial_height = scaling_mgr.get_initial_window_size()
+        x, y = scaling_mgr.get_centered_position(initial_width, initial_height)
+        payment_root.geometry(f"{initial_width}x{initial_height}+{x}+{y}")
         
         # Set minimum size like main GUI
         payment_root.minsize(MIN_WIDTH, MIN_HEIGHT)

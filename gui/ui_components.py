@@ -1,4 +1,376 @@
 import tkinter as tk
+from tkinter import font as tkfont
+from typing import Dict, Tuple, Optional
+import sys
+
+# --- Scaling System ---
+
+# Reference dimensions (design target - the original design resolution)
+REFERENCE_WIDTH = 1300
+REFERENCE_HEIGHT = 950
+
+# Minimum window dimensions (larger minimum for readability)
+MIN_WIDTH = 800
+MIN_HEIGHT = 680
+
+# Font scaling bounds (base_size: (min_size, max_size))
+FONT_BOUNDS = {
+    "timer": (64, 36, 80),      # Base 64pt, min 36, max 80
+    "stat": (28, 18, 36),       # Base 28pt, min 18, max 36
+    "title": (24, 16, 32),      # Base 24pt, min 16, max 32
+    "status": (24, 16, 32),     # Base 24pt, min 16, max 32
+    "body": (14, 11, 18),       # Base 14pt, min 11, max 18
+    "button": (14, 11, 18),     # Base 14pt, min 11, max 18
+    "small": (12, 10, 16),      # Base 12pt, min 10, max 16
+    "badge": (12, 10, 16),      # Base 12pt, min 10, max 16
+    "caption": (12, 10, 16),    # Base 12pt, min 10, max 16
+}
+
+
+def _is_bundled() -> bool:
+    """Check if running from a PyInstaller bundle."""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+
+def normalize_tk_scaling(root: tk.Tk) -> None:
+    """
+    Normalize tk scaling for consistent font rendering across terminal and bundled apps.
+    
+    On macOS, bundled apps with NSHighResolutionCapable report different DPI
+    than terminal apps, causing fonts to render at incorrect sizes. This function
+    detects the environment and sets tk scaling to ensure consistent rendering.
+    
+    MUST be called before creating any fonts or widgets.
+    
+    Args:
+        root: The root Tkinter window (before any widgets are created).
+    """
+    if sys.platform != "darwin":
+        return  # Only needed on macOS
+    
+    root.update_idletasks()
+    
+    try:
+        # Get the current tk scaling factor
+        current_scaling = root.tk.call('tk', 'scaling')
+        
+        # Get the actual DPI reported by the system
+        dpi = root.winfo_fpixels('1i')
+        
+        # Standard macOS DPI is 72 points per inch
+        # On Retina displays, DPI can be 144 or higher
+        # Terminal apps typically report 72 DPI with tk scaling ~1.0
+        # Bundled apps with NSHighResolutionCapable may report higher DPI
+        
+        if _is_bundled():
+            # For bundled apps, normalize to standard macOS scaling
+            # This ensures fonts render at the same size as in terminal
+            # Target: tk scaling of 1.0 with 72 DPI baseline
+            if dpi > 100:
+                # Retina display detected - bundled app reports physical DPI
+                # Set tk scaling to 1.0 for consistent font rendering
+                # (fonts are specified in points and should render correctly at 1.0)
+                root.tk.call('tk', 'scaling', 1.0)
+            else:
+                # Non-Retina or DPI already normalized
+                # Ensure scaling is 1.0 for consistency
+                if current_scaling != 1.0:
+                    root.tk.call('tk', 'scaling', 1.0)
+        # For terminal apps, leave scaling unchanged (already correct)
+        
+    except Exception:
+        pass  # If detection fails, leave tk defaults unchanged
+
+
+class ScalingManager:
+    """
+    Centralized scaling manager for responsive GUI elements.
+    
+    Handles screen detection, scale factor calculation, and provides
+    utilities for scaling dimensions, fonts, and padding.
+    """
+    
+    def __init__(self, root: tk.Tk):
+        """
+        Initialize the scaling manager.
+        
+        Args:
+            root: The root Tkinter window.
+        """
+        self.root = root
+        self._current_scale = 1.0
+        self._screen_width = 0
+        self._screen_height = 0
+        self._fonts: Dict[str, tkfont.Font] = {}
+        
+        # Normalize tk scaling for consistent font rendering (bundled vs terminal)
+        # This MUST happen before any fonts or screen measurements
+        normalize_tk_scaling(root)
+        
+        # Detect screen size
+        self._detect_screen_size()
+    
+    def _detect_screen_size(self):
+        """
+        Detect the current screen dimensions for window sizing.
+        
+        After normalize_tk_scaling() sets tk scaling to 1.0, screen dimensions
+        should be reported consistently. We only apply additional normalization
+        if we detect physical pixels on Retina displays in bundled apps.
+        
+        Note: normalize_tk_scaling() must be called before this method.
+        """
+        self.root.update_idletasks()
+        
+        # Get raw screen dimensions
+        raw_width = self.root.winfo_screenwidth()
+        raw_height = self.root.winfo_screenheight()
+        
+        # On macOS bundled apps, screen dimensions may still be in physical pixels
+        # even after tk scaling normalization. Detect and convert if needed.
+        if sys.platform == "darwin" and _is_bundled():
+            try:
+                # Get the tk scaling factor (should be 1.0 after normalization)
+                tk_scaling = self.root.tk.call('tk', 'scaling')
+                
+                # Get actual DPI
+                dpi = self.root.winfo_fpixels('1i')
+                
+                # If width suggests physical pixels on Retina (>2000 for most Macs)
+                # and we're in a bundled app, normalize to logical pixels
+                if raw_width > 2000 and dpi > 100:
+                    scale_factor = dpi / 72.0
+                    raw_width = int(raw_width / scale_factor)
+                    raw_height = int(raw_height / scale_factor)
+            except Exception:
+                pass  # Use raw values if detection fails
+        
+        self._screen_width = raw_width
+        self._screen_height = raw_height
+    
+    @property
+    def screen_width(self) -> int:
+        """Get the screen width."""
+        return self._screen_width
+    
+    @property
+    def screen_height(self) -> int:
+        """Get the screen height."""
+        return self._screen_height
+    
+    @property
+    def current_scale(self) -> float:
+        """Get the current scale factor."""
+        return self._current_scale
+    
+    def get_initial_window_size(self) -> Tuple[int, int]:
+        """
+        Calculate the initial window size based on screen dimensions.
+        
+        Returns:
+            Tuple of (width, height) for the initial window size.
+        """
+        # Target 75% of screen width, 80% of screen height
+        # But cap at reference dimensions for larger screens
+        target_width = min(int(self._screen_width * 0.75), REFERENCE_WIDTH)
+        target_height = min(int(self._screen_height * 0.8), REFERENCE_HEIGHT)
+        
+        # Ensure minimum size
+        target_width = max(target_width, MIN_WIDTH)
+        target_height = max(target_height, MIN_HEIGHT)
+        
+        return target_width, target_height
+    
+    def get_centered_position(self, width: int, height: int) -> Tuple[int, int]:
+        """
+        Calculate the centered position for a window.
+        
+        Args:
+            width: Window width.
+            height: Window height.
+        
+        Returns:
+            Tuple of (x, y) position to center the window.
+        """
+        x = (self._screen_width - width) // 2
+        y = (self._screen_height - height) // 2
+        return x, y
+    
+    def calculate_scale(self, window_width: int, window_height: int) -> float:
+        """
+        Calculate the scale factor based on window dimensions.
+        
+        Args:
+            window_width: Current window width.
+            window_height: Current window height.
+        
+        Returns:
+            Scale factor (1.0 = reference size).
+        """
+        width_scale = window_width / REFERENCE_WIDTH
+        height_scale = window_height / REFERENCE_HEIGHT
+        return min(width_scale, height_scale)
+    
+    def update_scale(self, window_width: int, window_height: int, threshold: float = 0.02) -> bool:
+        """
+        Update the current scale factor if it changed significantly.
+        
+        Args:
+            window_width: Current window width.
+            window_height: Current window height.
+            threshold: Minimum scale change to trigger update (default 2% for smoother scaling).
+        
+        Returns:
+            True if scale changed significantly, False otherwise.
+        """
+        new_scale = self.calculate_scale(window_width, window_height)
+        
+        # Update if scale changed beyond threshold (smaller = smoother)
+        if abs(new_scale - self._current_scale) > threshold:
+            self._current_scale = new_scale
+            return True
+        return False
+    
+    def set_scale(self, scale: float):
+        """
+        Directly set the current scale factor.
+        
+        Args:
+            scale: The scale factor to set.
+        """
+        self._current_scale = scale
+    
+    def scale_dimension(self, base_value: int, min_value: Optional[int] = None) -> int:
+        """
+        Scale a dimension by the current scale factor.
+        
+        Args:
+            base_value: The base dimension value.
+            min_value: Optional minimum value (won't go below this).
+        
+        Returns:
+            Scaled dimension value.
+        """
+        scaled = int(base_value * self._current_scale)
+        if min_value is not None:
+            return max(scaled, min_value)
+        return scaled
+    
+    def scale_padding(self, base_padding: int) -> int:
+        """
+        Scale padding/margin by the current scale factor.
+        
+        Args:
+            base_padding: The base padding value.
+        
+        Returns:
+            Scaled padding value (minimum 2).
+        """
+        return max(2, int(base_padding * self._current_scale))
+    
+    def scale_font_size(self, font_key: str) -> int:
+        """
+        Get the scaled font size for a font key.
+        
+        Args:
+            font_key: Key from FONT_BOUNDS (e.g., "timer", "title", "body").
+        
+        Returns:
+            Scaled font size within bounds.
+        """
+        if font_key not in FONT_BOUNDS:
+            # Default to body font if key not found
+            font_key = "body"
+        
+        base_size, min_size, max_size = FONT_BOUNDS[font_key]
+        scaled_size = int(base_size * self._current_scale)
+        
+        # Clamp to bounds
+        return max(min_size, min(scaled_size, max_size))
+    
+    def get_popup_size(
+        self, 
+        base_width: int, 
+        base_height: int, 
+        use_window_scale: bool = True,
+        min_width: Optional[int] = None,
+        min_height: Optional[int] = None
+    ) -> Tuple[int, int]:
+        """
+        Calculate popup size based on current window scale or screen dimensions.
+        
+        Args:
+            base_width: Base popup width.
+            base_height: Base popup height.
+            use_window_scale: If True, scale based on current window. If False, use screen.
+            min_width: Optional minimum width to prevent content clipping.
+            min_height: Optional minimum height to prevent buttons being hidden.
+        
+        Returns:
+            Tuple of (width, height) for the popup.
+        """
+        if use_window_scale:
+            # Use the current window scale for popup sizing
+            # This ensures popups match the current main window size
+            popup_scale = max(self._current_scale, 0.6)  # Minimum 60%
+        else:
+            # Scale based on screen size relative to 1920x1080
+            popup_scale = min(
+                self._screen_width / 1920,
+                self._screen_height / 1080,
+                1.0
+            )
+            popup_scale = max(popup_scale, 0.6)
+        
+        width = int(base_width * popup_scale)
+        height = int(base_height * popup_scale)
+        
+        # Enforce minimum dimensions to prevent content clipping
+        if min_width is not None:
+            width = max(width, min_width)
+        if min_height is not None:
+            height = max(height, min_height)
+        
+        return width, height
+    
+    def get_popup_fonts_scale(self) -> float:
+        """
+        Get the scale factor to use for popup fonts.
+        
+        Returns:
+            Scale factor for popup fonts (based on current window scale).
+        """
+        return max(self._current_scale, 0.7)  # Minimum 70% for readability
+
+
+def get_screen_scale_factor(root: tk.Tk) -> float:
+    """
+    Get a scale factor based on screen size (utility function).
+    
+    Args:
+        root: Tkinter root window.
+    
+    Returns:
+        Scale factor relative to 1920x1080.
+    """
+    root.update_idletasks()
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    
+    # Normalize for Retina displays on macOS bundled apps
+    if sys.platform == "darwin" and _is_bundled() and screen_width > 2000:
+        try:
+            dpi = root.winfo_fpixels('1i')
+            if dpi > 100:
+                scale_factor = dpi / 72.0
+                screen_width = int(screen_width / scale_factor)
+                screen_height = int(screen_height / scale_factor)
+        except Exception:
+            pass
+    
+    scale = min(screen_width / 1920, screen_height / 1080, 1.0)
+    return max(scale, 0.6)  # Minimum 60% scale
+
 
 # --- Design System Constants (Seraphic Focus) ---
 COLORS = {

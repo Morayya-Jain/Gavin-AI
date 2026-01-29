@@ -43,7 +43,7 @@ class UsageLimiter:
                     data = json.load(f)
                     logger.debug(f"Loaded usage data: {data}")
                     return data
-            except (json.JSONDecodeError, IOError) as e:
+            except (json.JSONDecodeError, IOError, OSError, PermissionError) as e:
                 logger.warning(f"Failed to load usage data: {e}. Starting fresh.")
         
         # Default data for new users
@@ -72,7 +72,7 @@ class UsageLimiter:
         Get remaining usage time in seconds.
         
         Returns:
-            Number of seconds remaining (can be negative if overused).
+            Number of seconds remaining (clamped to 0 minimum).
         """
         remaining = self.data["total_granted_seconds"] - self.data["total_used_seconds"]
         return max(0, remaining)
@@ -118,8 +118,14 @@ class UsageLimiter:
         Record usage time.
         
         Args:
-            seconds: Number of seconds to add to total usage.
+            seconds: Number of seconds to add to total usage. Must be non-negative.
+        
+        Raises:
+            ValueError: If seconds is negative.
         """
+        if seconds < 0:
+            raise ValueError("Usage seconds must be non-negative")
+        
         if self.data["first_use"] is None:
             self.data["first_use"] = datetime.now().isoformat()
         

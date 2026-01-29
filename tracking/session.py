@@ -49,7 +49,14 @@ class Session:
         Args:
             end_time: Optional end timestamp. If None, uses current time.
                       Pass explicit time to ensure accuracy when called after delays.
+        
+        Note:
+            Calling end() multiple times is safe - subsequent calls are ignored.
         """
+        # Prevent duplicate end calls
+        if self.end_time is not None:
+            return
+        
         self.end_time = end_time or datetime.now()
         
         # Finalize the last state if it exists
@@ -80,6 +87,19 @@ class Session:
                         screen_distraction, paused)
             timestamp: Optional timestamp. If None, uses current time.
         """
+        # Validate event type against known constants
+        valid_event_types = {
+            config.EVENT_PRESENT,
+            config.EVENT_AWAY,
+            config.EVENT_GADGET_SUSPECTED,
+            config.EVENT_SCREEN_DISTRACTION,
+            config.EVENT_PAUSED
+        }
+        if event_type not in valid_event_types:
+            # Log warning but don't crash - allows forward compatibility
+            import logging
+            logging.getLogger(__name__).warning(f"Unknown event type: {event_type}")
+        
         if timestamp is None:
             timestamp = datetime.now()
         
@@ -118,12 +138,19 @@ class Session:
         
         Args:
             end_time: Optional end timestamp. If None, uses current time.
+        
+        Note:
+            Events with zero or negative duration are skipped to prevent data corruption.
         """
         if not self.current_state or not self.state_start_time:
             return
         
         actual_end_time = end_time or datetime.now()
         duration = (actual_end_time - self.state_start_time).total_seconds()
+        
+        # Skip events with zero or negative duration (prevents data corruption)
+        if duration <= 0:
+            return
         
         event = {
             "type": self.current_state,

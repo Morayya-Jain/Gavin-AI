@@ -26,7 +26,8 @@ class DailyStatsTracker:
     
     def __init__(self):
         """Initialize the daily stats tracker and load existing data."""
-        self.data_file: Path = config.BASE_DIR / "data" / "daily_stats.json"
+        # Use USER_DATA_DIR for writable user data (persists across app updates)
+        self.data_file: Path = config.USER_DATA_DIR / "daily_stats.json"
         self.data = self._load_data()
         
         # Check if we need to reset for a new day
@@ -45,7 +46,7 @@ class DailyStatsTracker:
                     data = json.load(f)
                     logger.debug(f"Loaded daily stats: {data}")
                     return data
-            except (json.JSONDecodeError, IOError) as e:
+            except (json.JSONDecodeError, IOError, OSError, PermissionError) as e:
                 logger.warning(f"Failed to load daily stats: {e}. Starting fresh.")
         
         # Default data for new day
@@ -94,7 +95,14 @@ class DailyStatsTracker:
             away_seconds: Time spent away from desk in seconds
             gadget_seconds: Time spent on gadgets (phone, etc.) in seconds
             screen_distraction_seconds: Time spent on distracting websites/apps in seconds
+        
+        Raises:
+            ValueError: If any parameter is negative.
         """
+        # Validate non-negative inputs
+        if any(x < 0 for x in [focus_seconds, away_seconds, gadget_seconds, screen_distraction_seconds]):
+            raise ValueError("All time values must be non-negative")
+        
         # Check for day change before adding (in case app was left open overnight)
         self._check_and_reset_if_new_day()
         

@@ -324,6 +324,7 @@ class CameraCapture:
         """Close the camera and release resources."""
         if self.cap is not None:
             self.cap.release()
+            self.cap = None  # Prevent double-release on subsequent calls
             self.is_opened = False
             logger.info("Camera closed")
     

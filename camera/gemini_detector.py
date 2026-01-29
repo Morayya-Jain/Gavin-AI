@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from typing import Dict, Optional, Any
+import threading
 
 import google.generativeai as genai
 from PIL import Image
@@ -64,7 +65,8 @@ class GeminiVisionDetector:
             )
         )
         
-        # Cache for reducing API calls
+        # Cache for reducing API calls (thread-safe)
+        self._cache_lock = threading.Lock()
         self.last_detection_time = 0
         self.last_detection_result = None
         self.detection_cache_duration = 3.0  # Cache for 3 seconds (matches detection interval)
@@ -177,11 +179,12 @@ RULES:
                 "distraction_type": str (phone, tablet, controller, tv, or none)
             }
         """
-        # Check cache
+        # Check cache (thread-safe)
         current_time = time.time()
-        if use_cache and self.last_detection_result and \
-           (current_time - self.last_detection_time) < self.detection_cache_duration:
-            return self.last_detection_result
+        with self._cache_lock:
+            if use_cache and self.last_detection_result is not None and \
+               (current_time - self.last_detection_time) < self.detection_cache_duration:
+                return self.last_detection_result
         
         try:
             # Convert frame to PIL Image
@@ -234,9 +237,10 @@ RULES:
                 "distraction_type": result.get("distraction_type", "none")
             }
             
-            # Cache result
-            self.last_detection_result = detection_result
-            self.last_detection_time = current_time
+            # Cache result (thread-safe)
+            with self._cache_lock:
+                self.last_detection_result = detection_result
+                self.last_detection_time = current_time
             
             # Log detection
             if detection_result["gadget_visible"]:
