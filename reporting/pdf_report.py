@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import random
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
@@ -412,13 +413,16 @@ def _get_emoji_font_paths() -> list:
         ]
     
     elif system == 'Windows':
+        # Use WINDIR environment variable instead of hardcoded C:\Windows
+        # This handles non-standard Windows installations
+        windir = os.environ.get('WINDIR', 'C:\\Windows')
         return [
             # Segoe UI Emoji - Windows 10/11 default emoji font
-            ('C:\\Windows\\Fonts\\seguiemj.ttf', default_size),
+            (os.path.join(windir, 'Fonts', 'seguiemj.ttf'), default_size),
             # Alternative paths
             ('seguiemj.ttf', default_size),  # Let system find it
             # Older Windows might have different emoji support
-            ('C:\\Windows\\Fonts\\segoe ui emoji.ttf', default_size),
+            (os.path.join(windir, 'Fonts', 'segoe ui emoji.ttf'), default_size),
         ]
     
     else:  # Linux and others

@@ -48,6 +48,16 @@ REPORTS
 PDF reports are saved to your Downloads folder.
 
 
+SCREEN MONITORING (Chrome/Edge URL Detection)
+----------------------------------------------
+BrainDock can detect distracting websites in Chrome and Microsoft Edge.
+When you add a URL to your blocklist (e.g., youtube.com), the app will
+detect when you visit that site and mark it as a distraction.
+
+This feature uses Windows UI Automation to read the browser's address bar.
+No special permissions are required - it works automatically.
+
+
 TROUBLESHOOTING
 ---------------
 If the app doesn't start:
@@ -62,6 +72,28 @@ If the app doesn't start:
    You may need to add an exception for BrainDock
 
 4. Make sure your webcam is connected and not in use by another app
+
+If alert sounds don't play:
+- Check your system volume is not muted
+- The app uses Windows Media.SoundPlayer for audio
+
+If Chrome/Edge URL detection doesn't work:
+- Make sure the browser window is in the foreground
+- The address bar must be visible (not in full-screen mode)
+
+
+TESTING CHECKLIST (For Developers)
+----------------------------------
+Use this checklist to verify Windows 10/11 compatibility:
+
+[ ] Sound playback: Alert sound plays when distraction detected
+[ ] Chrome URL detection: Blocklist entries like "youtube.com" trigger correctly
+[ ] Edge URL detection: Same functionality works in Microsoft Edge
+[ ] PDF emoji rendering: Reports show emojis correctly
+[ ] Screen monitoring: App names detected correctly for non-elevated apps
+[ ] Stripe payment: Checkout flow completes without SSL errors
+[ ] Camera access: Webcam opens and detects presence
+[ ] Instance lock: Only one instance can run at a time
 
 
 SUPPORT

@@ -5017,7 +5017,12 @@ class BrainDockGUI:
         
         def play_sound():
             # Path to custom alert sound (bundled with app)
-            sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.mp3"
+            # Windows uses WAV (Media.SoundPlayer only supports WAV)
+            # macOS/Linux use MP3
+            if sys.platform == "win32":
+                sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.wav"
+            else:
+                sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.mp3"
             
             if not sound_file.exists():
                 logger.warning(f"Alert sound file not found: {sound_file}")
@@ -5032,7 +5037,7 @@ class BrainDockGUI:
                         stderr=subprocess.DEVNULL
                     )
                 elif sys.platform == "win32":
-                    # Windows - use powershell to play media file
+                    # Windows - use powershell to play WAV file
                     subprocess.Popen(
                         ["powershell", "-c", f'(New-Object Media.SoundPlayer "{sound_file}").PlaySync()'],
                         stdout=subprocess.DEVNULL,

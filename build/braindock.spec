@@ -37,6 +37,7 @@ datas = [
     # Data files
     (str(PROJECT_ROOT / 'data' / 'focus_statements.json'), 'data'),
     (str(PROJECT_ROOT / 'data' / 'braindock_alert_sound.mp3'), 'data'),
+    (str(PROJECT_ROOT / 'data' / 'braindock_alert_sound.wav'), 'data'),  # WAV for Windows
     # Assets
     (str(PROJECT_ROOT / 'assets'), 'assets'),
     # Legal documents
@@ -130,6 +131,16 @@ if IS_MACOS:
         'AVFoundation',  # For camera permission handling
         'objc',
         'PyObjCTools',
+    ])
+
+if IS_WINDOWS:
+    hiddenimports.extend([
+        'pywinauto',
+        'pywinauto.application',
+        'pywinauto.controls',
+        'pywinauto.controls.uia_controls',
+        'comtypes',
+        'comtypes.client',
     ])
 
 # Exclude unnecessary modules to reduce size

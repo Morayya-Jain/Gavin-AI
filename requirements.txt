@@ -6,4 +6,5 @@ python-dotenv>=1.0.0
 pillow>=10.0.0
 pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'
 pyobjc-framework-AVFoundation>=10.0; sys_platform == 'darwin'
+pywinauto>=0.6.8; sys_platform == 'win32'
 stripe>=7.0.0

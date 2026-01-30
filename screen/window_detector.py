@@ -213,8 +213,10 @@ class WindowDetector:
             
             app_name = self._get_process_name_windows(pid.value)
             
-            # Check if it's Chrome
-            is_browser = "chrome" in app_name.lower()
+            # Check if it's a Chromium-based browser (Chrome, Edge, etc.)
+            # The UI Automation method works for all Chromium browsers
+            app_name_lower = app_name.lower()
+            is_browser = any(b in app_name_lower for b in ["chrome", "msedge", "edge"])
             url = None
             
             if is_browser:
@@ -272,10 +274,10 @@ class WindowDetector:
     
     def _get_chrome_url_windows(self, hwnd: int) -> Optional[str]:
         """
-        Get Chrome URL on Windows using UI Automation.
+        Get Chrome/Edge URL on Windows using UI Automation.
         
-        This is more complex than macOS and may require additional libraries.
-        For Phase 1, we fall back to extracting URL from window title if possible.
+        Uses pywinauto to access the browser's address bar element,
+        equivalent to AppleScript on macOS.
         
         Args:
             hwnd: Window handle
@@ -283,26 +285,53 @@ class WindowDetector:
         Returns:
             URL or None
         """
-        # Chrome window titles often contain the page title and URL domain
-        # For a more robust solution, we'd need to use UI Automation
-        # For Phase 1, we'll rely on window title pattern matching
         try:
-            import ctypes
+            from pywinauto import Application
             
-            user32 = ctypes.windll.user32
-            length = user32.GetWindowTextLengthW(hwnd)
-            buffer = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buffer, length + 1)
-            title = buffer.value
+            # Connect to the browser window using UIA backend
+            app = Application(backend='uia')
+            app.connect(handle=hwnd)
             
-            # Chrome titles are usually "Page Title - Google Chrome"
-            # We can't get the full URL from title alone
-            # Return None for now - blocklist will match on window title
-            logger.debug(f"Chrome window title: {title}")
+            dlg = app.top_window()
+            
+            # Chrome and Edge address bar has title "Address and search bar"
+            try:
+                address_bar = dlg.child_window(
+                    title="Address and search bar",
+                    control_type="Edit"
+                )
+                url = address_bar.get_value()
+                if url:
+                    logger.debug(f"Browser URL via UI Automation: {url}")
+                    return url
+            except Exception as e:
+                logger.debug(f"Could not find address bar with primary method: {e}")
+            
+            # Fallback: Try alternative control names used by some Chromium versions
+            try:
+                # Some versions use different names
+                for title in ["Address and search bar", "Address bar", "Omnibox"]:
+                    try:
+                        address_bar = dlg.child_window(
+                            title=title,
+                            control_type="Edit"
+                        )
+                        url = address_bar.get_value()
+                        if url:
+                            logger.debug(f"Browser URL via fallback ({title}): {url}")
+                            return url
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Fallback address bar search failed: {e}")
+            
             return None
             
+        except ImportError:
+            logger.warning("pywinauto not available - Chrome URL detection disabled on Windows")
+            return None
         except Exception as e:
-            logger.debug(f"Could not get Chrome URL on Windows: {e}")
+            logger.debug(f"Could not get browser URL via UI Automation: {e}")
             return None
     
     def check_permission(self) -> bool:
