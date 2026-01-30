@@ -348,7 +348,6 @@ class PaymentScreen:
         
         # UI references
         self.main_frame: Optional[tk.Frame] = None
-        self.status_label: Optional[tk.Label] = None
         self.verify_button: Optional[RoundedButton] = None
         self.session_entry: Optional[StyledEntry] = None
         self.logo_image = None  # Keep reference to prevent garbage collection
@@ -359,10 +358,10 @@ class PaymentScreen:
         # Bind focus event to detect when user returns to app
         self.root.bind("<FocusIn>", self._on_window_focus)
     
-    def _clear_global_status(self, event=None):
-        """Clear global status label when user types."""
-        if self.status_label:
-            self.status_label.config(text="")
+    def _clear_entry_feedback(self, event=None):
+        """Clear entry feedback when user types."""
+        if self.session_entry:
+            self.session_entry.clear_error()
     
     def _calculate_scale(self):
         """
@@ -514,27 +513,29 @@ class PaymentScreen:
             title_label.pack()
         
         # Main Card Container - scale based on screen size
-        base_card_width, base_card_height = 550, 420
+        # Card is just a visual background - content should never be clipped
+        base_card_width, base_card_height = 550, 380
         self.card_width = self._scale_dimension(base_card_width, min_value=400)
-        self.card_height = self._scale_dimension(base_card_height, min_value=320)
+        self.card_height = self._scale_dimension(base_card_height, min_value=300)
         
         self.card_bg = Card(self.center_container, width=self.card_width, height=self.card_height, radius=28, bg_color=COLORS["surface"])
         self.card_bg.pack()
         
         # Inner Frame for widgets (placed on top of the card canvas)
+        # NO fixed height - frame sizes to content, card is just decorative background
         inner_padding = self._scale_padding(30)
         self.inner_frame = tk.Frame(self.center_container, bg=COLORS["surface"])
-        self.inner_frame.place(in_=self.card_bg, relx=0.5, y=inner_padding, anchor="n", width=self.card_width-inner_padding*2, height=self.card_height-inner_padding*2)
+        self.inner_frame.place(in_=self.card_bg, relx=0.5, y=inner_padding, anchor="n", width=self.card_width-inner_padding*2)
         
-        # Scaled padding values
-        title_top_pad = self._scale_padding(15)
-        title_bottom_pad = self._scale_padding(10)
-        price_bottom_pad = self._scale_padding(15)
-        btn_pad = self._scale_padding(8)
-        divider_top_pad = self._scale_padding(20)
-        divider_bottom_pad = self._scale_padding(12)
-        section_pad = self._scale_padding(15)
-        row_pad = self._scale_padding(15)
+        # Scaled padding values (reduced for small screen compatibility)
+        title_top_pad = self._scale_padding(10)
+        title_bottom_pad = self._scale_padding(8)
+        price_bottom_pad = self._scale_padding(12)
+        btn_pad = self._scale_padding(6)
+        divider_top_pad = self._scale_padding(14)
+        divider_bottom_pad = self._scale_padding(8)
+        section_pad = self._scale_padding(12)
+        row_pad = self._scale_padding(12)
         
         # 1. Title Section
         tk.Label(
@@ -559,7 +560,7 @@ class PaymentScreen:
         ).pack(pady=(0, price_bottom_pad))
         
         # 2. Primary Action (Purchase) - scaled button
-        btn_width = self._scale_dimension(260, min_value=200)
+        btn_width = self._scale_dimension(200, min_value=160)
         btn_height = self._scale_dimension(55, min_value=44)
         self.btn_pay = RoundedButton(
             self.inner_frame, 
@@ -642,17 +643,7 @@ class PaymentScreen:
         self.session_entry.canvas.configure(height=verify_btn_height)
         self.session_entry.pack(side="left", fill="x", expand=True, padx=(0, self._scale_padding(10)), anchor="n")
         self.session_entry.bind_return(self._on_verify_payment)
-        self.session_entry.entry.bind("<Key>", self._clear_global_status, add="+")
-        
-        # Status message (for non-input-specific messages like payment processing)
-        self.status_label = tk.Label(
-            self.inner_frame,
-            text="",
-            font=self.font_body,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["surface"]
-        )
-        self.status_label.pack(pady=(self._scale_padding(5), 0))
+        self.session_entry.entry.bind("<Key>", self._clear_entry_feedback, add="+")
         
         # Skip for development (only if configured)
         if getattr(config, 'SKIP_LICENSE_CHECK', False):
@@ -669,31 +660,23 @@ class PaymentScreen:
     
     def _update_status(self, message: str, is_error: bool = False, is_success: bool = False):
         """
-        Update the status message.
+        Update the status message via the session entry's inline display.
         
         Args:
             message: Status message to display.
-            is_error: Whether this is an error message (red).
-            is_success: Whether this is a success message (green).
+            is_error: Whether this is an error message (red text + red border).
+            is_success: Whether this is a success message (green text + green border).
         """
-        # Handle input-specific messages
-        if "session id" in message.lower() and self.session_entry:
-            if is_error:
-                self.session_entry.show_error(message)
-            elif is_success:
-                self.session_entry.show_success(message)
-            else:
-                self.session_entry.show_info(message)
+        if not self.session_entry:
             return
-
-        # Display general messages in the global status label
-        if self.status_label:
-            if is_error:
-                self.status_label.config(text=message, fg=COLORS["status_gadget"])
-            elif is_success:
-                self.status_label.config(text=message, fg=COLORS["success"])
-            else:
-                self.status_label.config(text=message, fg=COLORS["text_secondary"])
+        
+        if is_error:
+            self.session_entry.show_error(message)
+        elif is_success:
+            self.session_entry.show_success(message)
+        else:
+            # Info/status messages: grey text, no border change
+            self.session_entry.show_info(message)
     
     def _start_payment_polling(self, session_id: str):
         """
@@ -748,9 +731,9 @@ class PaymentScreen:
                             self._payment_ready = True
                             self._payment_session_id = session_id
                             self._payment_info = info
-                        # Update status to let user know they can return
+                        # Update status to confirm payment
                         self.root.after(0, lambda: self._update_status(
-                            "Payment successful! Return to the app to continue.",
+                            "Payment successful!",
                             is_success=True
                         ))
                         break
@@ -805,9 +788,9 @@ class PaymentScreen:
                     self._payment_ready = True
                     self._payment_session_id = session_id
                     self._payment_info = info
-                logger.info("Payment verified via redirect - waiting for user to return to app")
+                logger.info("Payment verified via redirect")
                 self.root.after(0, lambda: self._update_status(
-                    "Payment successful! Return to the app to continue.",
+                    "Payment successful!",
                     is_success=True
                 ))
             else:
@@ -968,19 +951,12 @@ class PaymentScreen:
             # Start background polling for payment detection
             self._start_payment_polling(session_id)
             
-            # Pre-fill session ID in verify section (for manual fallback)
-            if self.session_entry:
-                self.session_entry.delete(0, tk.END)
-                self.session_entry.insert(0, session_id)
-            
             if error:
                 # Browser failed but we have session ID
                 self._update_status(error, is_error=True)
             else:
                 # Normal flow - show waiting message
-                self._update_status(
-                    "Complete payment in browser. The app will activate automatically."
-                )
+                self._update_status("Complete payment in browser.")
     
     def _on_verify_payment(self):
         """Handle verify payment button click."""

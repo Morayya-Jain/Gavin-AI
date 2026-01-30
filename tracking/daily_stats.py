@@ -3,6 +3,14 @@ Daily statistics tracker for BrainDock.
 
 Tracks cumulative focus and distraction time for the current day.
 Automatically resets at midnight. Data is stored locally per device.
+
+PRECISION GUIDELINE:
+    All time values (focus_seconds, distraction_seconds, etc.) are stored and
+    calculated as FLOATS to preserve full precision. Truncation to int should
+    ONLY happen at the final display step (UI formatting, PDF rendering).
+    
+    This prevents cumulative precision loss across multiple sessions per day.
+    Do NOT convert to int during calculations or when saving to storage.
 """
 
 import json
@@ -22,6 +30,8 @@ class DailyStatsTracker:
     
     Data is stored locally in a JSON file and resets automatically
     when the date changes (midnight reset).
+    
+    Note: All time values use floats for precision. Convert to int only at display time.
     """
     
     def __init__(self):
@@ -53,14 +63,14 @@ class DailyStatsTracker:
         return self._create_empty_day_data()
     
     def _create_empty_day_data(self) -> Dict[str, Any]:
-        """Create empty data structure for a new day."""
+        """Create empty data structure for a new day. Uses floats for precision."""
         return {
             "date": date.today().isoformat(),
-            "focus_seconds": 0,
-            "distraction_seconds": 0,
-            "away_seconds": 0,
-            "gadget_seconds": 0,
-            "screen_distraction_seconds": 0
+            "focus_seconds": 0.0,
+            "distraction_seconds": 0.0,
+            "away_seconds": 0.0,
+            "gadget_seconds": 0.0,
+            "screen_distraction_seconds": 0.0
         }
     
     def _save_data(self) -> None:
@@ -85,16 +95,18 @@ class DailyStatsTracker:
             self.data = self._create_empty_day_data()
             self._save_data()
     
-    def add_session_stats(self, focus_seconds: int, away_seconds: int, 
-                          gadget_seconds: int, screen_distraction_seconds: int) -> None:
+    def add_session_stats(self, focus_seconds: float, away_seconds: float, 
+                          gadget_seconds: float, screen_distraction_seconds: float) -> None:
         """
         Add statistics from a completed session to daily totals.
         
+        Uses floats for full precision. Truncation to int happens only at display time.
+        
         Args:
-            focus_seconds: Time spent focused (present) in seconds
-            away_seconds: Time spent away from desk in seconds
-            gadget_seconds: Time spent on gadgets (phone, etc.) in seconds
-            screen_distraction_seconds: Time spent on distracting websites/apps in seconds
+            focus_seconds: Time spent focused (present) in seconds (float for precision)
+            away_seconds: Time spent away from desk in seconds (float for precision)
+            gadget_seconds: Time spent on gadgets (phone, etc.) in seconds (float for precision)
+            screen_distraction_seconds: Time spent on distracting websites/apps in seconds (float for precision)
         
         Raises:
             ValueError: If any parameter is negative.
@@ -135,15 +147,15 @@ class DailyStatsTracker:
         self._check_and_reset_if_new_day()
         return self.data.copy()
     
-    def get_focus_seconds(self) -> int:
-        """Get total focused time today in seconds."""
+    def get_focus_seconds(self) -> float:
+        """Get total focused time today in seconds (float for precision)."""
         self._check_and_reset_if_new_day()
-        return self.data["focus_seconds"]
+        return float(self.data["focus_seconds"])
     
-    def get_distraction_seconds(self) -> int:
-        """Get total distraction time today in seconds."""
+    def get_distraction_seconds(self) -> float:
+        """Get total distraction time today in seconds (float for precision)."""
         self._check_and_reset_if_new_day()
-        return self.data["distraction_seconds"]
+        return float(self.data["distraction_seconds"])
     
     def get_focus_rate(self) -> float:
         """

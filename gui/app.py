@@ -37,7 +37,7 @@ from tracking.daily_stats import get_daily_stats_tracker, DailyStatsTracker
 from reporting.pdf_report import generate_report
 from instance_lock import check_single_instance, get_existing_pid
 from screen.window_detector import WindowDetector, get_screen_state, get_screen_state_with_ai_fallback
-from screen.blocklist import Blocklist, BlocklistManager, PRESET_CATEGORIES
+from screen.blocklist import Blocklist, BlocklistManager, PRESET_CATEGORIES, QUICK_SITES
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +207,77 @@ def _test_accessibility_with_applescript() -> bool:
     except Exception as e:
         logger.warning(f"AppleScript test error: {e}")
         return False
+
+
+# --- Time Formatting Helpers ---
+
+def format_badge_time(seconds: int) -> str:
+    """
+    Format seconds for the time remaining badge in top right corner.
+    
+    Uses full words: "hrs" for hours-only, "hr" with minutes, "min" for minutes.
+    
+    Args:
+        seconds: Number of seconds to format.
+        
+    Returns:
+        Formatted string like "2hrs", "1hr 3min", "30min", "45sec".
+    """
+    if seconds <= 0:
+        return "0 sec"
+    
+    hours = seconds // 3600
+    remaining = seconds % 3600
+    mins = remaining // 60
+    secs = remaining % 60
+    
+    if hours > 0 and mins > 0:
+        # Hours and minutes: "1hr 30min"
+        return f"{hours}hr {mins}min"
+    elif hours > 0:
+        # Hours only: "2hrs" (plural)
+        return f"{hours}hrs"
+    elif mins > 0:
+        # Minutes only: "30min"
+        return f"{mins}min"
+    else:
+        # Seconds only: "45sec"
+        return f"{secs}sec"
+
+
+def format_stat_time(seconds: float) -> str:
+    """
+    Format seconds for stat cards (Focus, Distractions).
+    
+    Uses proper singular/plural forms with spaces.
+    
+    Args:
+        seconds: Number of seconds to format.
+        
+    Returns:
+        Formatted string like "2 hrs 15 min", "45 min", "30 sec", or "0 min".
+    """
+    total_secs = int(seconds)
+    
+    if total_secs < 60:
+        # Less than a minute - show seconds
+        if total_secs == 1:
+            return "1 sec"
+        else:
+            return f"{total_secs} sec"
+    
+    total_mins = total_secs // 60
+    
+    if total_mins >= 60:
+        hours = total_mins // 60
+        mins = total_mins % 60
+        hr_unit = "hr" if hours == 1 else "hrs"
+        if mins > 0:
+            return f"{hours} {hr_unit} {mins} min"
+        else:
+            return f"{hours} {hr_unit}"
+    else:
+        return f"{total_mins} min"
 
 
 # --- Theme System ---
@@ -549,6 +620,285 @@ class RoundedButton(tk.Canvas):
             self._enabled = kwargs.pop("state") != tk.DISABLED
             if not self._enabled:
                 self.bg_color = COLORS["bg_tertiary"]
+        super().configure(**kwargs)
+        self.draw()
+
+
+class IconButton(tk.Canvas):
+    """
+    Rounded icon button with custom-drawn icons.
+    
+    Supports 'settings' (gear) and 'tutorial' (lightbulb) icons
+    with hover effects and scalable sizing.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        icon_type: str,
+        command=None,
+        size: int = 36,
+        bg_color=None,
+        hover_color=None,
+        icon_color=None,
+        corner_radius: int = 8,
+        image_path: str = None,
+        **kwargs
+    ):
+        """
+        Initialize the icon button.
+        
+        Args:
+            parent: Parent widget
+            icon_type: Type of icon ('settings' or 'tutorial')
+            command: Callback function when clicked
+            size: Button size in pixels (square)
+            bg_color: Background color
+            hover_color: Background color on hover
+            icon_color: Color of the icon
+            corner_radius: Radius for rounded corners
+            image_path: Optional path to PNG icon file
+        """
+        # Default colors from theme
+        bg_color = bg_color or COLORS.get("bg_secondary", "#FFFFFF")
+        hover_color = hover_color or COLORS.get("bg_tertiary", "#F2F0EB")
+        icon_color = icon_color or COLORS.get("text_secondary", "#8E8E93")
+        
+        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else COLORS["bg_primary"]
+        super().__init__(parent, width=size, height=size, bg=parent_bg, highlightthickness=0, **kwargs)
+        
+        self.icon_type = icon_type
+        self.command = command
+        self.size = size
+        self.bg_color = bg_color
+        self.hover_color = hover_color
+        self.icon_color = icon_color
+        self.corner_radius = corner_radius
+        self.image_path = image_path
+        self._enabled = True
+        self._photo_image = None  # Keep reference to prevent GC
+        
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Configure>", self._on_resize)
+        
+        self.draw()
+    
+    def _on_resize(self, event):
+        """Redraw on resize."""
+        self.size = min(event.width, event.height)
+        self.draw()
+    
+    def draw(self, pressed: bool = False):
+        """Render the button background and icon."""
+        self.delete("all")
+        w = self.winfo_width() or int(self["width"])
+        h = self.winfo_height() or int(self["height"])
+        size = min(w, h)
+        
+        # Draw rounded rectangle background
+        # Only draw background if hovered or pressed (or if bg_color is different from parent/transparent)
+        # We check if current bg_color matches the hover_color to detect hover state
+        is_hovered = (self.bg_color == self.hover_color)
+        
+        padding = 2
+        offset = 1 if pressed else 0
+        x1, y1 = padding, padding + offset
+        x2, y2 = size - padding, size - padding + offset
+        r = min(self.corner_radius, size / 4)
+        
+        if is_hovered or pressed:
+            self._draw_rounded_rect(x1, y1, x2, y2, r, fill=self.bg_color, outline="")
+        
+        # Draw the icon
+        center_x = size / 2
+        center_y = size / 2 + offset
+        
+        # Try to load image if path provided
+        if self.image_path and PIL_AVAILABLE:
+            if self._draw_image_icon(center_x, center_y, size):
+                return
+        
+        # Fallback to drawn icons
+        icon_size = size * 0.5  # Icon takes 50% of button size
+        
+        if self.icon_type == "settings":
+            self._draw_gear_icon(center_x, center_y, icon_size)
+        elif self.icon_type == "tutorial":
+            self._draw_lightbulb_icon(center_x, center_y, icon_size)
+            
+    def _draw_image_icon(self, cx, cy, btn_size):
+        """Draw icon from image file."""
+        try:
+            if not os.path.exists(self.image_path):
+                return False
+                
+            # Load original image if not already loaded or if size changed significantly
+            # We reload to ensure high quality scaling
+            icon_size = int(btn_size * 0.6)  # Image takes 60% of button
+            
+            img = Image.open(self.image_path)
+            img = img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+            self._photo_image = ImageTk.PhotoImage(img)
+            
+            self.create_image(cx, cy, image=self._photo_image)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to load icon image {self.image_path}: {e}")
+            return False
+    
+    def _draw_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
+        """Draw a rounded rectangle."""
+        points = [
+            x1 + r, y1,
+            x2 - r, y1,
+            x2, y1,
+            x2, y1 + r,
+            x2, y2 - r,
+            x2, y2,
+            x2 - r, y2,
+            x1 + r, y2,
+            x1, y2,
+            x1, y2 - r,
+            x1, y1 + r,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+    
+    def _draw_gear_icon(self, cx, cy, size):
+        """Draw a gear/cog icon."""
+        import math
+        
+        # Increased size for better visibility
+        outer_r = size / 1.8
+        inner_r = size / 2.6
+        hole_r = size / 5
+        teeth = 8
+        
+        # Create gear shape with teeth
+        points = []
+        for i in range(teeth * 2):
+            angle = (i * math.pi / teeth) - (math.pi / 2)
+            # Use trapezoidal teeth for a more mechanical look
+            # Even indices are outer points, odd are inner
+            r = outer_r if i % 2 == 0 else inner_r
+            
+            # Add slight angle offset for tooth width
+            tooth_width_angle = (math.pi / teeth) * 0.4
+            
+            if i % 2 == 0:
+                # Outer tooth edge (two points)
+                a1 = angle - tooth_width_angle
+                a2 = angle + tooth_width_angle
+                points.extend([
+                    cx + outer_r * math.cos(a1), cy + outer_r * math.sin(a1),
+                    cx + outer_r * math.cos(a2), cy + outer_r * math.sin(a2)
+                ])
+            else:
+                # Inner valley (one point in middle)
+                points.extend([
+                    cx + inner_r * math.cos(angle), cy + inner_r * math.sin(angle)
+                ])
+        
+        # Draw gear body
+        self.create_polygon(points, fill=self.icon_color, outline=self.icon_color, smooth=True)
+        
+        # Draw center hole
+        self.create_oval(
+            cx - hole_r, cy - hole_r,
+            cx + hole_r, cy + hole_r,
+            fill=self.bg_color, outline=self.bg_color
+        )
+    
+    def _draw_lightbulb_icon(self, cx, cy, size):
+        """Draw a tutorial icon (Book with exclamation mark)."""
+        # Book dimensions
+        book_w = size * 0.8
+        book_h = size * 0.6
+        spine_x = cx
+        
+        # Draw open book shape (two rounded rectangles meeting at spine)
+        # Left page
+        self.create_polygon(
+            cx, cy - book_h/2,           # Top spine
+            cx - book_w/2, cy - book_h/2, # Top left
+            cx - book_w/2, cy + book_h/2, # Bottom left
+            cx, cy + book_h/2,           # Bottom spine
+            fill=self.icon_color, outline=self.icon_color, smooth=True
+        )
+        
+        # Right page
+        self.create_polygon(
+            cx, cy - book_h/2,           # Top spine
+            cx + book_w/2, cy - book_h/2, # Top right
+            cx + book_w/2, cy + book_h/2, # Bottom right
+            cx, cy + book_h/2,           # Bottom spine
+            fill=self.icon_color, outline=self.icon_color, smooth=True
+        )
+        
+        # Draw spine line
+        self.create_line(
+            cx, cy - book_h/2,
+            cx, cy + book_h/2,
+            fill=self.bg_color, width=2
+        )
+        
+        # Draw exclamation mark on right page
+        excl_x = cx + book_w/4
+        excl_top_y = cy - book_h/4
+        excl_bot_y = cy + book_h/8
+        
+        # Line part
+        self.create_line(
+            excl_x, excl_top_y,
+            excl_x, excl_bot_y,
+            fill=self.bg_color, width=size*0.08, capstyle=tk.ROUND
+        )
+        
+        # Dot part
+        dot_y = cy + book_h/3
+        dot_r = size * 0.04
+        self.create_oval(
+            excl_x - dot_r, dot_y - dot_r,
+            excl_x + dot_r, dot_y + dot_r,
+            fill=self.bg_color, outline=self.bg_color
+        )
+    
+    def _on_click(self, event):
+        """Handle click."""
+        if self._enabled and self.command:
+            self.draw(pressed=True)
+            self.update_idletasks()
+            self.command()
+            if self.winfo_exists():
+                self.after(100, lambda: self.draw(pressed=False) if self.winfo_exists() else None)
+    
+    def _on_enter(self, event):
+        """Apply hover effect."""
+        if self._enabled:
+            self._original_bg = self.bg_color
+            self.bg_color = self.hover_color
+            self.draw()
+    
+    def _on_leave(self, event):
+        """Restore normal state."""
+        if self._enabled and hasattr(self, "_original_bg"):
+            self.bg_color = self._original_bg
+            self.draw()
+    
+    def configure(self, **kwargs):
+        """Update button properties."""
+        if "size" in kwargs:
+            new_size = kwargs.pop("size")
+            self.size = new_size
+            super().configure(width=new_size, height=new_size)
+        if "bg_color" in kwargs:
+            self.bg_color = kwargs.pop("bg_color")
+        if "hover_color" in kwargs:
+            self.hover_color = kwargs.pop("hover_color")
+        if "icon_color" in kwargs:
+            self.icon_color = kwargs.pop("icon_color")
         super().configure(**kwargs)
         self.draw()
 
@@ -1411,6 +1761,13 @@ class BrainDockGUI:
             if hasattr(self, 'pause_btn'):
                 self.pause_btn.configure(width=new_btn_width, height=new_btn_height)
             
+            # Scale icon buttons
+            new_icon_size = max(56, int(64 * new_scale))
+            if hasattr(self, 'settings_icon_btn'):
+                self.settings_icon_btn.configure(size=new_icon_size)
+            if hasattr(self, 'tutorial_icon_btn'):
+                self.tutorial_icon_btn.configure(size=new_icon_size)
+            
             # Scale camera card dimensions
             if hasattr(self, 'camera_card'):
                 new_camera_width = max(UI_CAMERA_CARD_MIN_WIDTH, int(UI_CAMERA_CARD_WIDTH * new_scale))
@@ -1464,11 +1821,11 @@ class BrainDockGUI:
                     
                     # Get title and value based on card type
                     if card_type == "focus":
-                        title = "TODAY'S FOCUS"
+                        title = "Today's Focus"
                     elif card_type == "distractions":
-                        title = "TODAY'S DISTRACTIONS"
+                        title = "Today's Distractions"
                     else:
-                        title = "TODAY'S FOCUS RATE"
+                        title = "Today's Focus Rate"
                     
                     # Title
                     card.create_text(
@@ -1482,7 +1839,7 @@ class BrainDockGUI:
                     # Main value - store item ID for updates
                     card_data["main"] = card.create_text(
                         center_x, int(72 * self.current_scale), 
-                        text="0m" if card_type != "rate" else "0%", 
+                        text="0 sec" if card_type != "rate" else "0%", 
                         anchor="center", 
                         font=self.font_stat, 
                         fill=COLORS["text_primary"]
@@ -1659,34 +2016,43 @@ class BrainDockGUI:
         self._create_mode_selector(timer_frame)
 
         # --- Footer (Fixed at bottom) ---
+        # Icon buttons in corners: settings (left), tutorial (right)
         footer_frame = tk.Frame(self.root, bg=COLORS["bg_primary"])
-        footer_frame.pack(side=tk.BOTTOM, pady=50, fill="x")
+        # Position icons closer to bottom corners
+        footer_frame.pack(side=tk.BOTTOM, pady=20, fill="x", padx=20)
         
-        footer_links = tk.Label(footer_frame, text="Blocklist Settings   •   How To Use", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"], cursor="")
-        footer_links.pack()
-        footer_links.bind("<Button-1>", lambda e: self._show_blocklist_settings()) 
-        # Note: "How To Use" click handling is tricky with single label. 
-        # For now, let's just make the whole text open settings or maybe separate them.
-        # Let's separate them for proper clicking.
+        # Scale icon size based on current scale
+        icon_size = max(56, int(64 * self.current_scale))
         
-        footer_links.pack_forget() # Remove the single label
+        # Settings icon (bottom left)
+        settings_icon_path = str(config.BASE_DIR / "assets" / "settings_icon.png")
+        self.settings_icon_btn = IconButton(
+            footer_frame,
+            icon_type="settings",
+            command=self._show_blocklist_settings,
+            size=icon_size,
+            bg_color=COLORS.get("bg_primary", "#F9F8F4"),
+            hover_color="#E0E0E0",  # Darker grey for hover
+            icon_color=COLORS.get("text_secondary", "#8E8E93"),
+            corner_radius=12,  # Slightly rounder for larger size
+            image_path=settings_icon_path
+        )
+        self.settings_icon_btn.pack(side=tk.LEFT, anchor="sw")
         
-        link_container = tk.Frame(footer_frame, bg=COLORS["bg_primary"])
-        link_container.pack()
-        
-        l1 = tk.Label(link_container, text="Blocklist Settings", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"], cursor="")
-        l1.pack(side=tk.LEFT, padx=10)
-        l1.bind("<Button-1>", lambda e: self._show_blocklist_settings())
-        l1.bind("<Enter>", lambda e: l1.config(fg=COLORS["button_resume_hover"], font=(self.font_small.cget("family"), self.font_small.cget("size"), "normal", "underline")))
-        l1.bind("<Leave>", lambda e: l1.config(fg=COLORS["text_secondary"], font=self.font_small))
-        
-        tk.Label(link_container, text="•", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"]).pack(side=tk.LEFT)
-        
-        l2 = tk.Label(link_container, text="How To Use", font=self.font_small, bg=COLORS["bg_primary"], fg=COLORS["text_secondary"], cursor="")
-        l2.pack(side=tk.LEFT, padx=10)
-        l2.bind("<Button-1>", lambda e: self._show_tutorial())
-        l2.bind("<Enter>", lambda e: l2.config(fg=COLORS["button_resume_hover"], font=(self.font_small.cget("family"), self.font_small.cget("size"), "normal", "underline")))
-        l2.bind("<Leave>", lambda e: l2.config(fg=COLORS["text_secondary"], font=self.font_small))
+        # Tutorial icon (bottom right)
+        tutorial_icon_path = str(config.BASE_DIR / "assets" / "tutorial_icon.png")
+        self.tutorial_icon_btn = IconButton(
+            footer_frame,
+            icon_type="tutorial",
+            command=self._show_tutorial,
+            size=icon_size,
+            bg_color=COLORS.get("bg_primary", "#F9F8F4"),
+            hover_color="#E0E0E0",  # Darker grey for hover
+            icon_color=COLORS.get("text_secondary", "#8E8E93"),
+            corner_radius=12,  # Slightly rounder for larger size
+            image_path=tutorial_icon_path
+        )
+        self.tutorial_icon_btn.pack(side=tk.RIGHT, anchor="se")
         
         # Status Badge removed - integrated into camera card
 
@@ -1710,17 +2076,17 @@ class BrainDockGUI:
         self.stat_cards[card_type] = {"card": card, "wrapper": wrapper}
         
         if card_type == "focus":
-            title = "TODAY'S FOCUS"
-            main_val = "0m"
+            title = "Today's Focus"
+            main_val = "0 sec"
             sub_label = "Focused"
-            sub_val = "0m"
+            sub_val = "0 sec"
         elif card_type == "distractions":
-            title = "TODAY'S DISTRACTIONS"
-            main_val = "0m"
+            title = "Today's Distractions"
+            main_val = "0 sec"
             sub_label = "Total"
-            sub_val = "0m"
+            sub_val = "0 sec"
         else:  # rate
-            title = "TODAY'S FOCUS RATE"
+            title = "Today's Focus Rate"
             main_val = "0%"
             sub_label = ""
             sub_val = ""
@@ -1739,16 +2105,6 @@ class BrainDockGUI:
         
         Shows the daily totals from previous sessions today when the app first opens.
         """
-        # Helper for time formatting
-        def fmt_time(seconds):
-            total_mins = int(seconds // 60)
-            if total_mins >= 60:
-                hours = total_mins // 60
-                mins = total_mins % 60
-                return f"{hours}h {mins}m"
-            else:
-                return f"{total_mins}m"
-        
         # Get today's accumulated stats
         daily_focus = self.daily_stats.get_focus_seconds()
         daily_distraction = self.daily_stats.get_distraction_seconds()
@@ -1757,12 +2113,12 @@ class BrainDockGUI:
         # Update Focus Card
         if "focus" in self.stat_cards:
             card = self.stat_cards["focus"]["card"]
-            card.itemconfigure(self.stat_cards["focus"]["main"], text=fmt_time(daily_focus))
+            card.itemconfigure(self.stat_cards["focus"]["main"], text=format_stat_time(daily_focus))
         
         # Update Distractions Card
         if "distractions" in self.stat_cards:
             card = self.stat_cards["distractions"]["card"]
-            card.itemconfigure(self.stat_cards["distractions"]["main"], text=fmt_time(daily_distraction))
+            card.itemconfigure(self.stat_cards["distractions"]["main"], text=format_stat_time(daily_distraction))
         
         # Update Focus Rate Card
         if "rate" in self.stat_cards:
@@ -1826,27 +2182,17 @@ class BrainDockGUI:
         else:
             today_focus_rate = 0.0
         
-        # Helper for time formatting
-        def fmt_time(seconds):
-            total_mins = int(seconds // 60)
-            if total_mins >= 60:
-                hours = total_mins // 60
-                mins = total_mins % 60
-                return f"{hours}h {mins}m"
-            else:
-                return f"{total_mins}m"
-        
         # --- Update Focus Card (TODAY's total focused time) ---
         if "focus" in self.stat_cards:
             card_data = self.stat_cards["focus"]
             card = card_data["card"]
-            card.itemconfigure(card_data["main"], text=fmt_time(today_focus))
+            card.itemconfigure(card_data["main"], text=format_stat_time(today_focus))
             
         # --- Update Distractions Card (TODAY's total: away + gadget + screen) ---
         if "distractions" in self.stat_cards:
             card_data = self.stat_cards["distractions"]
             card = card_data["card"]
-            card.itemconfigure(card_data["main"], text=fmt_time(today_distraction))
+            card.itemconfigure(card_data["main"], text=format_stat_time(today_distraction))
 
         # --- Update Focus Rate Card (TODAY's rate) ---
         if "rate" in self.stat_cards:
@@ -1861,16 +2207,6 @@ class BrainDockGUI:
         Called when starting a new session. Shows what's already accumulated today
         from previous sessions, which will then be updated with current session progress.
         """
-        # Helper for time formatting
-        def fmt_time(seconds):
-            total_mins = int(seconds // 60)
-            if total_mins >= 60:
-                hours = total_mins // 60
-                mins = total_mins % 60
-                return f"{hours}h {mins}m"
-            else:
-                return f"{total_mins}m"
-        
         # Get today's accumulated stats (from previous sessions)
         daily_focus = self.daily_stats.get_focus_seconds()
         daily_distraction = self.daily_stats.get_distraction_seconds()
@@ -1878,11 +2214,11 @@ class BrainDockGUI:
         
         if "focus" in self.stat_cards:
             card = self.stat_cards["focus"]["card"]
-            card.itemconfigure(self.stat_cards["focus"]["main"], text=fmt_time(daily_focus))
+            card.itemconfigure(self.stat_cards["focus"]["main"], text=format_stat_time(daily_focus))
         
         if "distractions" in self.stat_cards:
             card = self.stat_cards["distractions"]["card"]
-            card.itemconfigure(self.stat_cards["distractions"]["main"], text=fmt_time(daily_distraction))
+            card.itemconfigure(self.stat_cards["distractions"]["main"], text=format_stat_time(daily_distraction))
         
         if "rate" in self.stat_cards:
             card = self.stat_cards["rate"]["card"]
@@ -1903,13 +2239,13 @@ class BrainDockGUI:
         total_duration = self.session.get_duration()
         stats = compute_statistics(events, total_duration)
         
-        # Get session values (integers, truncated from floats)
-        session_focus = int(stats["present_seconds"])
-        session_away = int(stats["away_seconds"])
-        session_gadget = int(stats["gadget_seconds"])
-        session_screen = int(stats.get("screen_distraction_seconds", 0))
+        # Get session values (floats for full precision - truncation at display time only)
+        session_focus = float(stats["present_seconds"])
+        session_away = float(stats["away_seconds"])
+        session_gadget = float(stats["gadget_seconds"])
+        session_screen = float(stats.get("screen_distraction_seconds", 0))
         
-        # Save this session's stats to daily totals
+        # Save this session's stats to daily totals (floats for precision)
         # This accumulates today's progress across all sessions
         self.daily_stats.add_session_stats(
             focus_seconds=session_focus,
@@ -1923,31 +2259,21 @@ class BrainDockGUI:
         daily_distraction = self.daily_stats.get_distraction_seconds()
         daily_focus_rate = self.daily_stats.get_focus_rate()
         
-        # Helper for time formatting
-        def fmt_time(seconds):
-            total_mins = int(seconds // 60)
-            if total_mins >= 60:
-                hours = total_mins // 60
-                mins = total_mins % 60
-                return f"{hours}h {mins}m"
-            else:
-                return f"{total_mins}m"
-        
         # Update stat cards with TODAY's totals
         if "focus" in self.stat_cards:
             card = self.stat_cards["focus"]["card"]
-            card.itemconfigure(self.stat_cards["focus"]["main"], text=fmt_time(daily_focus))
+            card.itemconfigure(self.stat_cards["focus"]["main"], text=format_stat_time(daily_focus))
         
         if "distractions" in self.stat_cards:
             card = self.stat_cards["distractions"]["card"]
-            card.itemconfigure(self.stat_cards["distractions"]["main"], text=fmt_time(daily_distraction))
+            card.itemconfigure(self.stat_cards["distractions"]["main"], text=format_stat_time(daily_distraction))
         
         if "rate" in self.stat_cards:
             card = self.stat_cards["rate"]["card"]
             card.itemconfigure(self.stat_cards["rate"]["main"], text=f"{int(daily_focus_rate)}%")
         
         logger.info(f"Session saved to daily stats. Today's totals: "
-                   f"Focus={fmt_time(daily_focus)}, Distractions={fmt_time(daily_distraction)}, "
+                   f"Focus={format_stat_time(daily_focus)}, Distractions={format_stat_time(daily_distraction)}, "
                    f"Rate={int(daily_focus_rate)}%")
     
     def _create_mode_selector(self, parent=None):
@@ -2090,12 +2416,12 @@ class BrainDockGUI:
         """
         Show the blocklist settings dialog.
         
-        Allows users to enable/disable preset categories and add custom patterns.
+        Allows users to enable/disable quick block sites and add custom patterns.
         Uses scrolling for content with fixed buttons at the bottom.
         """
         # Create settings window - scale based on current main window size
         settings_window = tk.Toplevel(self.root)
-        settings_window.title("Blocklist Settings")
+        settings_window.title("Screen Settings")
         settings_window.configure(bg=COLORS["bg_primary"])
         
         # Scale popup size based on the main window's current size
@@ -2182,7 +2508,7 @@ class BrainDockGUI:
         # Title
         title = tk.Label(
             content_padding,
-            text="Blocklist Settings",
+            text="Screen Settings",
             font=self.font_title,
             fg=COLORS["accent_primary"],
             bg=COLORS["bg_primary"]
@@ -2191,67 +2517,70 @@ class BrainDockGUI:
         
         subtitle = tk.Label(
             content_padding,
-            text="Configure which sites/apps to block",
+            text="Configure which sites/apps to notify you about",
             font=self.font_small,
             fg=COLORS["text_secondary"],
             bg=COLORS["bg_primary"]
         )
         subtitle.pack(pady=(0, 20))
         
-        # Categories section
-        categories_label = tk.Label(
+        # Quick Select section
+        quick_sites_label = tk.Label(
             content_padding,
-            text="Preset Categories",
-            font=self.font_status,
+            text="Quick Select",
+            font=("Helvetica", 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
-        categories_label.pack(anchor="w", pady=(0, 10))
+        quick_sites_label.pack(anchor="w", pady=(0, 10))
         
-        # Category toggles
-        self.category_vars = {}
-        categories_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
-        categories_frame.pack(fill=tk.X, pady=(0, 15))
+        # Quick site toggles - two-column layout
+        self.quick_site_vars = {}
+        quick_sites_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
+        quick_sites_frame.pack(fill=tk.X, pady=(0, 15))
         
-        for cat_id, cat_data in PRESET_CATEGORIES.items():
-            var = tk.BooleanVar(value=cat_id in self.blocklist.enabled_categories)
-            self.category_vars[cat_id] = var
-            
-            row = tk.Frame(categories_frame, bg=COLORS["bg_primary"])
-            row.pack(fill=tk.X, pady=3)
+        # Configure two columns with equal weight
+        quick_sites_frame.columnconfigure(0, weight=1)
+        quick_sites_frame.columnconfigure(1, weight=1)
+        
+        # Define site order for two-column layout
+        # Column 1: instagram, netflix, tiktok
+        # Column 2: youtube, reddit, twitter
+        site_order = [
+            ("instagram", 0, 0),  # (site_id, row, column)
+            ("youtube", 0, 1),
+            ("netflix", 1, 0),
+            ("reddit", 1, 1),
+            ("tiktok", 2, 0),
+            ("twitter", 2, 1),
+        ]
+        
+        for site_id, row, col in site_order:
+            if site_id not in QUICK_SITES:
+                continue
+            site_data = QUICK_SITES[site_id]
+            var = tk.BooleanVar(value=site_id in self.blocklist.enabled_quick_sites)
+            self.quick_site_vars[site_id] = var
             
             cb = tk.Checkbutton(
-                row,
-                text=cat_data["name"],
+                quick_sites_frame,
+                text=site_data["name"],
                 variable=var,
-                font=self.font_small,
+                font=("Helvetica", 14),
                 fg=COLORS["text_primary"],
                 bg=COLORS["bg_primary"],
                 selectcolor=COLORS["bg_secondary"],
                 activebackground=COLORS["bg_primary"],
                 activeforeground=COLORS["text_primary"],
-                command=lambda c=cat_id, v=var: self._toggle_category(c, v.get())
+                command=lambda s=site_id, v=var: self._toggle_quick_site(s, v.get())
             )
-            cb.pack(side=tk.LEFT)
-            
-            # Clickable label to show sites in category
-            desc = tk.Label(
-                row,
-                text=f"({len(cat_data['patterns'])} sites)",
-                font=self.font_small,
-                fg=COLORS["accent_primary"],
-                bg=COLORS["bg_primary"]
-            )
-            desc.pack(side=tk.LEFT, padx=(8, 0))
-            desc.bind("<Button-1>", lambda e, c=cat_id, d=cat_data: self._show_category_sites(c, d))
-            desc.bind("<Enter>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_warm"]))
-            desc.bind("<Leave>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_primary"]))
+            cb.grid(row=row, column=col, sticky="w", pady=3, padx=(0, 20))
         
         # --- Custom URLs section ---
         urls_label = tk.Label(
             content_padding,
             text="Custom URLs/Domains",
-            font=self.font_status,
+            font=("Helvetica", 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -2259,7 +2588,7 @@ class BrainDockGUI:
         
         urls_help = tk.Label(
             content_padding,
-            text="Add website URLs to block (e.g., example.com)",
+            text="Add website URLs to notify you about (e.g., example.com)",
             font=self.font_small,
             fg=COLORS["text_secondary"],
             bg=COLORS["bg_primary"]
@@ -2303,7 +2632,7 @@ class BrainDockGUI:
         apps_label = tk.Label(
             content_padding,
             text="Custom App Names",
-            font=self.font_status,
+            font=("Helvetica", 16, "bold"),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -2311,7 +2640,7 @@ class BrainDockGUI:
         
         apps_help = tk.Label(
             content_padding,
-            text="Add desktop app names to block (e.g., Steam, Discord)",
+            text="Add desktop app names to notify you about (e.g., Steam, Discord)",
             font=self.font_small,
             fg=COLORS["text_secondary"],
             bg=COLORS["bg_primary"]
@@ -2375,7 +2704,7 @@ class BrainDockGUI:
         
         ai_help = tk.Label(
             ai_frame,
-            text="⚠️ Takes screenshots - only use if URL detection fails",
+            text="⚠️ Takes screenshots - only use if default screen sharing fails",
             font=self.font_small,
             fg=COLORS["accent_warm"],
             bg=COLORS["bg_primary"]
@@ -2436,6 +2765,19 @@ class BrainDockGUI:
             self.blocklist.enable_category(category_id)
         else:
             self.blocklist.disable_category(category_id)
+    
+    def _toggle_quick_site(self, site_id: str, enabled: bool):
+        """
+        Toggle a quick block site on/off.
+        
+        Args:
+            site_id: The quick site ID to toggle (e.g., "youtube", "instagram")
+            enabled: Whether to enable or disable
+        """
+        if enabled:
+            self.blocklist.enable_quick_site(site_id)
+        else:
+            self.blocklist.disable_quick_site(site_id)
     
     def _show_category_sites(self, category_id: str, cat_data: dict):
         """
@@ -3406,27 +3748,27 @@ class BrainDockGUI:
             else:
                 app_duplicates.append(app)
         
-        # Check for overlaps with preset categories
-        preset_patterns = set()
-        for cat_id in self.blocklist.enabled_categories:
-            if cat_id in PRESET_CATEGORIES:
-                for p in PRESET_CATEGORIES[cat_id]['patterns']:
-                    preset_patterns.add(p.lower())
+        # Check for overlaps with enabled quick sites
+        quick_site_patterns = set()
+        for site_id in self.blocklist.enabled_quick_sites:
+            if site_id in QUICK_SITES:
+                for p in QUICK_SITES[site_id]['patterns']:
+                    quick_site_patterns.add(p.lower())
         
-        # Filter out URLs that already exist in enabled preset categories
+        # Filter out URLs that already exist in enabled quick sites
         url_overlaps = []
         final_urls = []
         for url in unique_urls:
-            if url in preset_patterns:
+            if url in quick_site_patterns:
                 url_overlaps.append(url)
             else:
                 final_urls.append(url)
         
-        # Filter out Apps that already exist in enabled preset categories
+        # Filter out Apps that already exist in enabled quick sites
         app_overlaps = []
         final_apps = []
         for app in unique_apps:
-            if app.lower() in preset_patterns:
+            if app.lower() in quick_site_patterns:
                 app_overlaps.append(app)
             else:
                 final_apps.append(app)
@@ -3450,13 +3792,13 @@ class BrainDockGUI:
         if duplicates_removed:
             messages.append(f"Removed {len(duplicates_removed)} duplicate(s)")
         if preset_overlaps:
-            messages.append(f"Removed {len(preset_overlaps)} entry(s) already in preset categories")
+            messages.append(f"Removed {len(preset_overlaps)} entry(s) already in quick block sites")
         if all_warnings:
             messages.append(f"Note: {len(all_warnings)} warning(s) - entries saved but may need review")
         
         if messages:
             messagebox.showinfo(
-                "Blocklist Saved",
+                "Screen Settings Saved",
                 "\n".join(messages) + "\n\nSettings saved successfully."
             )
         
@@ -3588,7 +3930,7 @@ class BrainDockGUI:
                 "\u25B6",  # Play triangle
                 COLORS["button_start"],
                 "Start a Session",
-                "Click the green 'Start Session' button to begin your focus session. "
+                "Click the 'Start Session' button to begin your focus session. "
                 "BrainDock will always help you stay on track."
             ),
             (
@@ -3598,24 +3940,24 @@ class BrainDockGUI:
                 "The status indicator shows your current state:\n"
                 "\u2022 Green = Focused and on task\n"
                 "\u2022 Orange = Away from desk\n"
-                "\u2022 Red = Gadget distraction detected\n"
-                "\u2022 Purple = Screen distraction detected"
+                "\u2022 Red = Gadget distraction\n"
+                "\u2022 Purple = Screen distraction"
             ),
             (
                 "\U0001F4A1",  # Lightbulb emoji
                 COLORS["accent_warm"],
                 "Best Results",
                 "For best results, we recommend only one person stays in the camera frame "
-                "during your session. Multiple people may cause inaccurate tracking."
+                "during your session. Multiple people may affect accuracy."
             ),
             (
                 "\u2699",  # Gear/settings
                 COLORS["text_secondary"],
                 "Choose Your Mode",
                 "Select how BrainDock helps you focus:\n"
-                "\u2022 Camera \u2014 Uses your Device Camera and AI to detect distractions\n"
-                "\u2022 Screen \u2014 Checks current open window for distracting apps/websites\n"
-                "\u2022 Both \u2014 Combined detection"
+                "\u2022 Camera: Uses your device camera and AI to notice distractions\n"
+                "\u2022 Screen: Checks current open window for distracting apps/websites\n"
+                "\u2022 Both: Camera and screen combined"
             ),
             (
                 "\u23F1",  # Stopwatch
@@ -3821,7 +4163,7 @@ class BrainDockGUI:
         else:
             remaining = base_remaining
         
-        time_text = self.usage_limiter.format_time(int(remaining))
+        time_text = format_badge_time(int(remaining))
         
         # Determine badge color based on remaining time
         # Use white text on colored backgrounds for better contrast

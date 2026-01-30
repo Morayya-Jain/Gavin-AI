@@ -193,6 +193,18 @@ PRESET_CATEGORIES = {
 }
 
 
+# Quick toggle sites - simplified preset for common distractions
+# These are the 6 most common distraction sites that users can quickly toggle
+QUICK_SITES = {
+    "instagram": {"name": "instagram.com", "patterns": ["instagram.com"]},
+    "youtube": {"name": "youtube.com", "patterns": ["youtube.com"]},
+    "netflix": {"name": "netflix.com", "patterns": ["netflix.com"]},
+    "reddit": {"name": "reddit.com", "patterns": ["reddit.com"]},
+    "tiktok": {"name": "tiktok.com", "patterns": ["tiktok.com"]},
+    "twitter": {"name": "twitter.com / x.com", "patterns": ["twitter.com", "x.com"]},
+}
+
+
 @dataclass
 class Blocklist:
     """
@@ -203,6 +215,7 @@ class Blocklist:
     """
     
     enabled_categories: Set[str] = field(default_factory=set)
+    enabled_quick_sites: Set[str] = field(default_factory=set)
     custom_urls: List[str] = field(default_factory=list)
     custom_apps: List[str] = field(default_factory=list)
     # Legacy field for backward compatibility (migrated on load)
@@ -248,7 +261,7 @@ class Blocklist:
         Get all active blocking patterns.
         
         Returns:
-            Combined list of patterns from enabled categories and custom additions.
+            Combined list of patterns from enabled categories, quick sites, and custom additions.
         """
         patterns = []
         
@@ -256,6 +269,11 @@ class Blocklist:
         for cat_id in self.enabled_categories:
             if cat_id in PRESET_CATEGORIES:
                 patterns.extend(PRESET_CATEGORIES[cat_id]["patterns"])
+        
+        # Add patterns from enabled quick sites
+        for site_id in self.enabled_quick_sites:
+            if site_id in QUICK_SITES:
+                patterns.extend(QUICK_SITES[site_id]["patterns"])
         
         # Add custom URLs and apps (new separated fields)
         patterns.extend(self.custom_urls)
@@ -387,6 +405,38 @@ class Blocklist:
             return True
         return False
     
+    def enable_quick_site(self, site_id: str) -> bool:
+        """
+        Enable a quick block site.
+        
+        Args:
+            site_id: ID of the quick site to enable (e.g., "youtube", "instagram")
+            
+        Returns:
+            True if site was enabled, False if invalid site
+        """
+        if site_id in QUICK_SITES:
+            self.enabled_quick_sites.add(site_id)
+            logger.info(f"Enabled quick block site: {site_id}")
+            return True
+        return False
+    
+    def disable_quick_site(self, site_id: str) -> bool:
+        """
+        Disable a quick block site.
+        
+        Args:
+            site_id: ID of the quick site to disable
+            
+        Returns:
+            True if site was disabled, False if wasn't enabled
+        """
+        if site_id in self.enabled_quick_sites:
+            self.enabled_quick_sites.discard(site_id)
+            logger.info(f"Disabled quick block site: {site_id}")
+            return True
+        return False
+    
     def add_custom_url(self, url: str) -> bool:
         """
         Add a custom URL/domain pattern to block.
@@ -510,6 +560,7 @@ class Blocklist:
         """
         return {
             "enabled_categories": list(self.enabled_categories),
+            "enabled_quick_sites": list(self.enabled_quick_sites),
             "custom_urls": self.custom_urls,
             "custom_apps": self.custom_apps,
             # Don't save legacy custom_patterns - they should be migrated
@@ -530,6 +581,7 @@ class Blocklist:
         """
         return cls(
             enabled_categories=set(data.get("enabled_categories", [])),
+            enabled_quick_sites=set(data.get("enabled_quick_sites", [])),
             custom_urls=data.get("custom_urls", []),
             custom_apps=data.get("custom_apps", []),
             # Load legacy custom_patterns for migration (will be migrated in __post_init__)

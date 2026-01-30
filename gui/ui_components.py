@@ -16,7 +16,7 @@ MIN_HEIGHT = 680
 # Font scaling bounds (base_size: (min_size, max_size))
 FONT_BOUNDS = {
     "timer": (64, 36, 80),      # Base 64pt, min 36, max 80
-    "stat": (28, 18, 36),       # Base 28pt, min 18, max 36
+    "stat": (25, 16, 32),       # Base 25pt, min 16, max 32
     "title": (24, 16, 32),      # Base 24pt, min 16, max 32
     "status": (24, 16, 32),     # Base 24pt, min 16, max 32
     "body": (14, 11, 18),       # Base 14pt, min 11, max 18
@@ -588,9 +588,9 @@ class StyledEntry(tk.Frame):
         self._has_feedback = True
         
     def show_info(self, message):
+        """Show info message without changing border color (for neutral status)."""
         self.error_label.config(text=message, fg=COLORS["text_secondary"])
-        self.current_border_color = COLORS["accent"]
-        self._draw()
+        # Don't change border color for info messages - keep current state
         self._has_feedback = True
 
     def clear_error(self):
