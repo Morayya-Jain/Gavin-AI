@@ -52,15 +52,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
+      - name: Set up Python via Homebrew
+        run: |
+          # Use Homebrew Python for consistent tkinter bundling with local builds
+          # actions/setup-python uses pyenv which creates different library structures
+          # that cause tkinter to be bundled in unexpected locations (python3__dot__14/lib-dynload/)
+          # Homebrew Python bundles _tkinter in a standard location that PyInstaller handles correctly
+          brew install python@3.14 python-tk@3.14 tcl-tk
+
+          # Verify Python version
+          echo "Python version:"
+          $(brew --prefix python@3.14)/bin/python3.14 --version
+
+          # Add to PATH
+          echo "$(brew --prefix python@3.14)/bin" >> $GITHUB_PATH
+
       - name: Create virtual environment and install dependencies
         run: |
-          # Create isolated virtual environment (matches local build process)
-          python -m venv .venv-build
+          # Create isolated virtual environment using Homebrew Python
+          $(brew --prefix python@3.14)/bin/python3.14 -m venv .venv-build
           source .venv-build/bin/activate
 
           # Upgrade pip and install dependencies
@@ -70,7 +80,17 @@ jobs:
 
           # Verify we're using the venv Python
           echo "Python location: $(which python)"
+          echo "Python version: $(python --version)"
           echo "Pip location: $(which pip)"
+
+          # Verify tkinter is available and show library location
+          echo "=== Verifying tkinter ==="
+          python -c "import tkinter; print(f'tkinter module: {tkinter.__file__}')"
+          python -c "import _tkinter; print(f'_tkinter binary: {_tkinter.__file__}')"
+
+          # Show tkinter library path for debugging
+          echo "=== _tkinter library location ==="
+          python -c "import _tkinter; import os; print(os.path.dirname(_tkinter.__file__))"
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -141,17 +161,45 @@ jobs:
           echo "=== Checking bundled CustomTkinter assets ==="
           CTK_PATH="dist/BrainDock.app/Contents/Resources/customtkinter"
           if [ -d "$CTK_PATH" ]; then
-            echo "CustomTkinter directory found at: $CTK_PATH"
+            echo "✓ CustomTkinter directory found at: $CTK_PATH"
             find "$CTK_PATH" -type f | head -20
           else
-            echo "WARNING: CustomTkinter directory NOT found at $CTK_PATH"
+            echo "⚠ WARNING: CustomTkinter directory NOT found at $CTK_PATH"
             echo "Searching for customtkinter assets..."
             find dist/BrainDock.app -name "*customtkinter*" -o -name "*.otf" 2>/dev/null | head -20
           fi
 
           echo ""
+          echo "=== Checking tkinter bundling (CRITICAL) ==="
+          TKINTER_DIRECT="dist/BrainDock.app/Contents/Frameworks/_tkinter.cpython-314-darwin.so"
+          TKINTER_NESTED=$(find dist/BrainDock.app -name "_tkinter*.so" 2>/dev/null | head -1)
+
+          if [ -f "$TKINTER_DIRECT" ]; then
+            echo "✓ _tkinter found in expected location: $TKINTER_DIRECT"
+          elif [ -n "$TKINTER_NESTED" ]; then
+            echo "⚠ WARNING: _tkinter found in nested location: $TKINTER_NESTED"
+            echo "  This may cause tkinter import issues at runtime."
+            echo "  Consider fixing PyInstaller bundling or adding symlink."
+            # Create symlink to ensure _tkinter is found
+            echo "  Creating symlink to Frameworks directory..."
+            ln -sf "$TKINTER_NESTED" "dist/BrainDock.app/Contents/Frameworks/_tkinter.cpython-314-darwin.so" || echo "  Failed to create symlink"
+          else
+            echo "✗ ERROR: _tkinter.so not found in bundle!"
+            echo "  tkinter will NOT work in the bundled app."
+            find dist/BrainDock.app -name "*tkinter*" 2>/dev/null
+          fi
+
+          echo ""
           echo "=== Checking bundled app data ==="
           ls -la "dist/BrainDock.app/Contents/Resources/" | head -20
+
+          echo ""
+          echo "=== Checking Frameworks directory ==="
+          ls -la "dist/BrainDock.app/Contents/Frameworks/" | head -30
+
+          echo ""
+          echo "=== All tkinter-related files ==="
+          find dist/BrainDock.app -name "*tkinter*" 2>/dev/null
 
           echo ""
           echo "=== App bundle size ==="

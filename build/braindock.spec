@@ -111,6 +111,59 @@ if IS_WINDOWS:
     if icon_ico_path.exists():
         datas.append((str(icon_ico_path), 'assets'))
 
+# Explicitly collect tkinter binaries - required for consistent bundling
+# across different Python installation methods (pyenv, official installer, Homebrew)
+# Without this, GitHub Actions builds may place tkinter in unexpected locations
+binaries = []
+if IS_MACOS:
+    import sysconfig
+    import glob
+
+    # Find _tkinter shared library
+    stdlib_path = sysconfig.get_path('stdlib')
+    libdynload_path = sysconfig.get_path('platlib')
+
+    # Try multiple locations where _tkinter might be
+    tkinter_locations = [
+        os.path.join(sysconfig.get_config_var('LIBDIR') or '', 'python*', 'lib-dynload', '_tkinter*.so'),
+        os.path.join(stdlib_path or '', '..', 'lib-dynload', '_tkinter*.so'),
+        os.path.join(sys.prefix, 'lib', 'python*', 'lib-dynload', '_tkinter*.so'),
+        '/Library/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        os.path.expanduser('~/.pyenv/versions/*/lib/python*/lib-dynload/_tkinter*.so'),
+    ]
+
+    tkinter_found = False
+    for pattern in tkinter_locations:
+        matches = glob.glob(pattern)
+        for match in matches:
+            if os.path.exists(match):
+                print(f"INFO: Found _tkinter at: {match}")
+                # Bundle to the root Frameworks directory for consistent access
+                binaries.append((match, '.'))
+                tkinter_found = True
+                break
+        if tkinter_found:
+            break
+
+    if not tkinter_found:
+        print("WARNING: Could not find _tkinter.so - tkinter may not work in bundled app")
+
+    # Also ensure Tcl/Tk libraries are properly bundled
+    # Look for Tcl and Tk frameworks/libraries
+    tcltk_locations = [
+        '/Library/Frameworks/Tcl.framework',
+        '/Library/Frameworks/Tk.framework',
+        '/usr/local/opt/tcl-tk/lib',
+        os.path.expanduser('~/.pyenv/versions/*/lib/libtcl*.dylib'),
+        os.path.expanduser('~/.pyenv/versions/*/lib/libtk*.dylib'),
+    ]
+    for pattern in tcltk_locations:
+        matches = glob.glob(pattern)
+        for match in matches:
+            if os.path.exists(match) and os.path.isfile(match):
+                print(f"INFO: Found Tcl/Tk library at: {match}")
+                binaries.append((match, '.'))
+
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [
     # Bundled API keys module (generated at build time)
@@ -216,7 +269,7 @@ runtime_hooks = []
 a = Analysis(
     [str(PROJECT_ROOT / 'main.py')],
     pathex=[str(PROJECT_ROOT)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
