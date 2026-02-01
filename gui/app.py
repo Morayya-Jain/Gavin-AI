@@ -4599,18 +4599,8 @@ class BrainDockGUI:
                 # For "not_determined", "authorized", or "unknown" - proceed normally
                 # "not_determined" will trigger the macOS permission prompt when camera opens
             
-            # Check Windows camera permission status before trying to open camera
-            elif sys.platform == "win32":
-                logger.info("Checking Windows camera permission...")
-                permission_status = check_windows_camera_permission()
-                logger.info(f"Windows camera permission status: {permission_status}")
-                
-                if permission_status == "denied":
-                    # Permission not granted - show dialog to guide user
-                    self._show_camera_permission_denied()
-                    return
-                # For "authorized" or "unknown" - proceed normally
-                # "unknown" will let the normal camera open flow handle errors
+            # Windows: Skip pre-check - let detection thread handle camera errors
+            # This avoids blocking main UI thread and double-opening camera
 
         # Pre-check screen (Accessibility) permission for screen modes
         needs_screen = self.monitoring_mode in (config.MODE_SCREEN_ONLY, config.MODE_BOTH)

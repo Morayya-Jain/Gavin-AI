@@ -245,7 +245,11 @@ class CameraCapture:
                     return False
             
             print(f"[BrainDock] Opening camera at index {self.camera_index}...")
-            self.cap = cv2.VideoCapture(self.camera_index)
+            # Use DirectShow backend on Windows for faster initialization
+            if sys.platform == "win32":
+                self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+            else:
+                self.cap = cv2.VideoCapture(self.camera_index)
             print(f"[BrainDock] VideoCapture created, isOpened={self.cap.isOpened()}")
             
             if not self.cap.isOpened():
@@ -308,9 +312,16 @@ class CameraCapture:
             # Important: On macOS, when the camera permission dialog first appears,
             # cap.read() may fail while the user is still responding to the dialog.
             # We retry many times with delays to give the user unlimited time to respond.
-            # 120 attempts * 0.5s = 60 seconds max wait time for permission dialog
-            max_read_attempts = 120 if sys.platform == "darwin" else 3
-            read_delay = 0.5  # Wait between retries to give user time to respond to dialog
+            # macOS: 120 attempts * 0.5s = 60 seconds max wait time for permission dialog
+            # Windows: 5 attempts * 0.2s = ~1 second (DirectShow returns quickly)
+            # Linux: 3 attempts * 0.5s = 1.5 seconds
+            if sys.platform == "darwin":
+                max_read_attempts = 120  # 60 seconds for permission dialog
+            elif sys.platform == "win32":
+                max_read_attempts = 5    # Quick retries with DirectShow
+            else:
+                max_read_attempts = 3    # Linux unchanged
+            read_delay = 0.2 if sys.platform == "win32" else 0.5
             
             if sys.platform == "darwin":
                 print(f"[BrainDock] Requesting camera access...")
