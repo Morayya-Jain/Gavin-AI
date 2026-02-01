@@ -20,18 +20,18 @@ def format_duration(seconds: float, full_precision: bool = False) -> str:
                        for compact display (omits seconds when hours present).
     
     Returns:
-        Formatted string like "1m 30s", "45s", "2h 15m", or with full_precision
-        "1h 30m 45s", "2h 0m 0s"
+        Formatted string like "1 min 30 secs", "45 secs", "2 hrs 15 mins", or with full_precision
+        "1 hr 30 mins 45 secs", "2 hrs 0 mins 0 secs"
     
     Examples:
         >>> format_duration(90)
-        "1m 30s"
+        "1 min 30 secs"
         >>> format_duration(3725)
-        "1h 2m"
+        "1 hr 2 mins"
         >>> format_duration(3725, full_precision=True)
-        "1h 2m 5s"
+        "1 hr 2 mins 5 secs"
         >>> format_duration(0)
-        "0s"
+        "0 secs"
     """
     # Truncate to int at display time only (floor, not round)
     total_seconds = int(seconds) if seconds >= 0 else 0
@@ -44,18 +44,21 @@ def format_duration(seconds: float, full_precision: bool = False) -> str:
     parts = []
     
     if hours > 0:
-        parts.append(f"{hours}h")
+        hr_unit = "hr" if hours == 1 else "hrs"
+        parts.append(f"{hours} {hr_unit}")
     
     if mins > 0 or (full_precision and hours > 0):
         # Show minutes if non-zero, or if full_precision and hours exist
-        parts.append(f"{mins}m")
+        min_unit = "min" if mins == 1 else "mins"
+        parts.append(f"{mins} {min_unit}")
     
     if secs > 0 or full_precision:
         # Show seconds if non-zero, or always if full_precision
         if hours == 0 or full_precision:
-            parts.append(f"{secs}s")
+            sec_unit = "sec" if secs == 1 else "secs"
+            parts.append(f"{secs} {sec_unit}")
     
-    return " ".join(parts) if parts else "0s"
+    return " ".join(parts) if parts else "0 secs"
 
 
 def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> Dict[str, Any]:

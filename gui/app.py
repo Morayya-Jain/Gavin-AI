@@ -288,16 +288,16 @@ def format_badge_time(seconds: int) -> str:
     """
     Format seconds for the time remaining badge in top right corner.
     
-    Uses full words: "hrs" for hours-only, "hr" with minutes, "min" for minutes.
+    Uses readable abbreviations with proper spacing: "2 hrs", "1 hr 30 mins", "30 mins", "45 secs".
     
     Args:
         seconds: Number of seconds to format.
         
     Returns:
-        Formatted string like "2hrs", "1hr 3min", "30min", "45sec".
+        Formatted string like "2 hrs", "1 hr 30 mins", "30 mins", "45 secs".
     """
     if seconds <= 0:
-        return "0 sec"
+        return "0 secs"
     
     hours = seconds // 3600
     remaining = seconds % 3600
@@ -305,17 +305,22 @@ def format_badge_time(seconds: int) -> str:
     secs = remaining % 60
     
     if hours > 0 and mins > 0:
-        # Hours and minutes: "1hr 30min"
-        return f"{hours}hr {mins}min"
+        # Hours and minutes: "1 hr 30 mins"
+        hr_unit = "hr" if hours == 1 else "hrs"
+        min_unit = "min" if mins == 1 else "mins"
+        return f"{hours} {hr_unit} {mins} {min_unit}"
     elif hours > 0:
-        # Hours only: "2hrs" (plural)
-        return f"{hours}hrs"
+        # Hours only: "2 hrs" or "1 hr"
+        hr_unit = "hr" if hours == 1 else "hrs"
+        return f"{hours} {hr_unit}"
     elif mins > 0:
-        # Minutes only: "30min"
-        return f"{mins}min"
+        # Minutes only: "30 mins" or "1 min"
+        min_unit = "min" if mins == 1 else "mins"
+        return f"{mins} {min_unit}"
     else:
-        # Seconds only: "45sec"
-        return f"{secs}sec"
+        # Seconds only: "45 secs" or "1 sec"
+        sec_unit = "sec" if secs == 1 else "secs"
+        return f"{secs} {sec_unit}"
 
 
 def format_stat_time(seconds: float) -> str:
@@ -328,16 +333,14 @@ def format_stat_time(seconds: float) -> str:
         seconds: Number of seconds to format.
         
     Returns:
-        Formatted string like "2 hrs 15 min", "45 min", "30 sec", or "0 min".
+        Formatted string like "2 hrs 15 mins", "45 mins", "30 secs", or "0 mins".
     """
     total_secs = int(seconds)
     
     if total_secs < 60:
         # Less than a minute - show seconds
-        if total_secs == 1:
-            return "1 sec"
-        else:
-            return f"{total_secs} sec"
+        sec_unit = "sec" if total_secs == 1 else "secs"
+        return f"{total_secs} {sec_unit}"
     
     total_mins = total_secs // 60
     
@@ -346,11 +349,13 @@ def format_stat_time(seconds: float) -> str:
         mins = total_mins % 60
         hr_unit = "hr" if hours == 1 else "hrs"
         if mins > 0:
-            return f"{hours} {hr_unit} {mins} min"
+            min_unit = "min" if mins == 1 else "mins"
+            return f"{hours} {hr_unit} {mins} {min_unit}"
         else:
             return f"{hours} {hr_unit}"
     else:
-        return f"{total_mins} min"
+        min_unit = "min" if total_mins == 1 else "mins"
+        return f"{total_mins} {min_unit}"
 
 
 # --- Theme System ---
@@ -1035,7 +1040,7 @@ class Card(tk.Canvas):
 
 
 class Badge(tk.Canvas):
-    """Rounded badge for status and time remaining."""
+    """Rounded badge for status and time remaining with auto-expanding width."""
 
     def __init__(
         self,
@@ -1061,13 +1066,46 @@ class Badge(tk.Canvas):
         self.font = font
         self.corner_radius = corner_radius
         self.clickable = clickable
+        self.min_width = width  # Store minimum width
+        self.height = height
+        self._padding = 24  # Horizontal padding for text
         self.draw()
         if self.clickable:
             self.bind("<Enter>", lambda e: self.config(cursor=""))
             self.bind("<Leave>", lambda e: self.config(cursor=""))
 
+    def _calculate_text_width(self) -> int:
+        """Calculate the width needed to display the current text."""
+        font_to_use = self.font or (get_font_sans(), 12, "bold")
+        
+        # Create a temporary text item to measure width
+        temp_id = self.create_text(0, 0, text=self.text, font=font_to_use)
+        bbox = self.bbox(temp_id)
+        self.delete(temp_id)
+        
+        if bbox:
+            text_width = bbox[2] - bbox[0]
+            return text_width + self._padding  # Add padding on both sides
+        
+        # Fallback: estimate based on character count
+        return len(self.text) * 8 + self._padding
+
+    def _update_width_if_needed(self):
+        """Update canvas width if text requires more space than minimum."""
+        required_width = self._calculate_text_width()
+        current_width = int(self["width"])
+        
+        # Expand if needed, but never shrink below minimum
+        new_width = max(self.min_width, required_width)
+        
+        if new_width != current_width:
+            self.configure(width=new_width)
+
     def draw(self):
         """Render the badge background and label."""
+        # First, check if we need to expand width
+        self._update_width_if_needed()
+        
         self.delete("all")
         w = int(self["width"])
         h = int(self["height"])
@@ -1084,7 +1122,7 @@ class Badge(tk.Canvas):
         return self.create_polygon(points, smooth=True, **kwargs)
 
     def configure_badge(self, text=None, bg_color=None, fg_color=None, font=None):
-        """Update badge styling and text."""
+        """Update badge styling and text, auto-expanding width if needed."""
         if text:
             self.text = text
         if bg_color:
@@ -1725,6 +1763,7 @@ class BrainDockGUI:
         # Usage limit tracking
         self.usage_limiter: UsageLimiter = get_usage_limiter()
         self.is_locked: bool = False  # True when time exhausted and app is locked
+        self.lockout_frame: Optional[tk.Frame] = None  # Overlay shown when time exhausted
         
         # Daily stats tracking (accumulates across sessions, resets at midnight)
         self.daily_stats: DailyStatsTracker = get_daily_stats_tracker()
@@ -4137,7 +4176,29 @@ class BrainDockGUI:
             self._update_time_badge()
     
     def _update_usage_display(self):
-        """Update the time badge display periodically."""
+        """Update the time badge display periodically and check for external changes."""
+        # Periodically reload data from file to detect external changes
+        # This runs less frequently than badge updates to reduce file I/O
+        if not hasattr(self, '_last_file_check'):
+            self._last_file_check = 0
+        
+        current_time = time.time()
+        
+        # Check file every 3 seconds when not running, every 10 seconds when running
+        check_interval = 10 if self.is_running else 3
+        if current_time - self._last_file_check >= check_interval:
+            self._last_file_check = current_time
+            self.usage_limiter.reload_data(force_trust=True)  # Trust file for dev/testing
+            
+            # Check if time status changed
+            if not self.is_locked and self.usage_limiter.is_time_exhausted():
+                # Time became exhausted externally - show lockout (but don't interrupt running session)
+                if not self.is_running:
+                    logger.info("Time exhausted (detected via file check) - showing lockout")
+                    self.is_locked = True
+                    self._show_lockout_overlay()
+                    return  # Stop this update cycle, lockout has its own
+        
         if not self.is_locked:
             self._update_time_badge()
         
@@ -4263,18 +4324,19 @@ class BrainDockGUI:
         )
         message_label.pack(pady=(0, 20))
         
-        # Request More Time button
+        # Request More Time button - styled consistently with other main buttons
+        btn_width = max(UI_BUTTON_MIN_WIDTH, int(UI_BUTTON_WIDTH * self.current_scale))
+        btn_height = max(UI_BUTTON_MIN_HEIGHT, int(UI_BUTTON_HEIGHT * self.current_scale))
         request_btn = RoundedButton(
             content_frame,
             text="Request More Time",
             command=self._show_password_dialog,
-            bg_color=COLORS["accent_primary"],
-            hover_color="#0EA5E9",
-            fg_color=COLORS["text_white"],
+            bg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"],
+            text_color=COLORS["text_white"],
             font=self.font_button,
-            corner_radius=10,
-            width=200,
-            height=52
+            width=btn_width,
+            height=btn_height
         )
         request_btn.pack()
         
@@ -4283,9 +4345,46 @@ class BrainDockGUI:
         
         # Disable start button
         self.start_stop_btn.configure(state=tk.DISABLED)
+        
+        # Start periodic check for time availability (checks if file was externally modified)
+        self._start_lockout_check()
+    
+    def _start_lockout_check(self):
+        """Start periodic checking for time availability while in lockout state."""
+        self._lockout_check_id = None
+        self._check_lockout_time_available()
+    
+    def _check_lockout_time_available(self):
+        """
+        Periodically check if time has become available (e.g., file was externally modified).
+        
+        Auto-dismisses the lockout overlay if time is now available.
+        """
+        # Stop checking if no longer locked or lockout frame was destroyed
+        if not self.is_locked or self.lockout_frame is None:
+            self._lockout_check_id = None
+            return
+        
+        # Try to reload data and check if time is now available
+        if self.usage_limiter.reload_data():
+            logger.info("Time became available - auto-dismissing lockout")
+            self._hide_lockout_overlay()
+            return
+        
+        # Schedule next check in 2 seconds
+        self._lockout_check_id = self.root.after(2000, self._check_lockout_time_available)
+    
+    def _stop_lockout_check(self):
+        """Stop the periodic lockout availability check."""
+        if hasattr(self, '_lockout_check_id') and self._lockout_check_id is not None:
+            self.root.after_cancel(self._lockout_check_id)
+            self._lockout_check_id = None
     
     def _hide_lockout_overlay(self):
         """Hide the lockout overlay after successful unlock."""
+        # Stop the periodic check
+        self._stop_lockout_check()
+        
         if self.lockout_frame is not None:
             self.lockout_frame.destroy()
             self.lockout_frame = None
@@ -4373,16 +4472,44 @@ class BrainDockGUI:
                 return
             
             if self.usage_limiter.validate_password(password):
+                # Check if extension limit reached
+                if not self.usage_limiter.can_grant_extension():
+                    dialog.destroy()
+                    messagebox.showerror(
+                        "Extension Limit Reached",
+                        f"You have used all {self.usage_limiter.get_max_extensions()} free time extensions.\n\n"
+                        "Please purchase a license to continue using BrainDock."
+                    )
+                    return
+                
                 # Grant extension
                 extension_seconds = self.usage_limiter.grant_extension()
                 extension_time = self.usage_limiter.format_time(extension_seconds)
+                remaining_ext = self.usage_limiter.get_remaining_extensions()
                 dialog.destroy()
-                self._hide_lockout_overlay()
-                messagebox.showinfo(
-                    "Time Added",
-                    f"{extension_time} has been added to your account.\n\n"
-                    f"New balance: {self.usage_limiter.format_time(self.usage_limiter.get_remaining_seconds())}"
-                )
+                
+                # Check if time is actually available now
+                remaining = self.usage_limiter.get_remaining_seconds()
+                if remaining > 0:
+                    # Time available - unlock and show success
+                    self._hide_lockout_overlay()
+                    ext_info = f"\n\nExtensions remaining: {remaining_ext}" if remaining_ext > 0 else "\n\nThis was your last free extension."
+                    messagebox.showinfo(
+                        "Time Added",
+                        f"{extension_time} has been added to your account.\n\n"
+                        f"New balance: {self.usage_limiter.format_time(remaining)}{ext_info}"
+                    )
+                else:
+                    # Still exhausted (used >= granted even after extension)
+                    # Update the badge but keep lockout visible
+                    self._update_time_badge()
+                    messagebox.showwarning(
+                        "Still Exhausted",
+                        f"{extension_time} was added, but your usage still exceeds the total granted time.\n\n"
+                        f"Used: {self.usage_limiter.format_time(self.usage_limiter.get_total_used_seconds())}\n"
+                        f"Granted: {self.usage_limiter.format_time(self.usage_limiter.get_total_granted_seconds())}\n\n"
+                        "Request more time to continue."
+                    )
             else:
                 error_label.configure(text="Incorrect password")
                 password_var.set("")
@@ -5168,17 +5295,9 @@ class BrainDockGUI:
             # Generate PDF report before lockout
             self._generate_report_for_lockout()
         
-        # Show lockout
+        # Show lockout overlay (user must click "Request More Time" button to proceed)
         self.is_locked = True
         self._show_lockout_overlay()
-        
-        # Notify user (after report generation so they know report was saved)
-        messagebox.showwarning(
-            "Time Exhausted",
-            "Your trial time has run out.\n\n"
-            "Your session report has been saved to Downloads.\n\n"
-            "Click 'Request More Time' to unlock additional usage."
-        )
     
     def _generate_report_for_lockout(self):
         """

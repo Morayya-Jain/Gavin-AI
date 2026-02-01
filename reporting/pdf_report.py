@@ -124,7 +124,7 @@ def _format_time_seconds(seconds: float) -> str:
         seconds: Time in seconds as float
         
     Returns:
-        Formatted string like "1m 30s" or "45s" or "2h 15m"
+        Formatted string like "1 min 30 secs" or "45 secs" or "2 hrs 15 mins"
     """
     return format_duration(seconds)
 

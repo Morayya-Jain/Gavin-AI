@@ -42,7 +42,7 @@ MIN_HEIGHT = 680
 
 # Font scaling bounds (base_size, min_size, max_size)
 FONT_BOUNDS = {
-    "timer": (60, 42, 78),      # Base 60pt, min 42, max 78
+    "timer": (50, 35, 65),      # Base 50pt, min 35, max 65
     "stat": (23, 15, 29),       # Base 23pt, min 15, max 29
     "title": (24, 17, 32),      # Base 24pt, min 17, max 32
     "status": (19, 15, 25),     # Base 19pt, min 15, max 25

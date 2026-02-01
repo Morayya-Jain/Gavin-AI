@@ -330,8 +330,21 @@ class PaymentScreen:
         self.session_entry: Optional[StyledEntry] = None
         self.logo_image = None
         self.btn_pay: Optional[RoundedButton] = None
+        self.card_bg: Optional[ctk.CTkFrame] = None
+        self.center_container: Optional[ctk.CTkFrame] = None
+        
+        # Card sizing constants (aspect ratio ~1.39:1)
+        self._card_aspect_ratio = 550 / 395
+        # Keep max close to original design - don't let it grow excessively
+        self._card_max_width = 550
+        self._card_max_height = 395
+        self._last_card_size: Optional[tuple] = None
+        self._content_min_size: Optional[tuple] = None
         
         self._setup_ui()
+        
+        # Bind resize handler after UI setup (delay to get accurate content size)
+        self.root.after(100, self._initialize_responsive_card)
         
         # Bind focus events to detect when user returns to app
         # Use both <Activate> (reliable on macOS) and <FocusIn> (fallback)
@@ -369,6 +382,110 @@ class PaymentScreen:
     def _scale_padding(self, base_padding: int) -> int:
         """Scale padding/margin by the screen scale factor."""
         return max(2, int(base_padding * self.screen_scale))
+    
+    def _initialize_responsive_card(self):
+        """
+        Initialize responsive card sizing after content is laid out.
+        
+        Captures the content-determined minimum size and sets up resize handling.
+        """
+        if not self.card_bg:
+            return
+        
+        # Force geometry update to get accurate content size
+        self.root.update_idletasks()
+        
+        # Capture the natural content size as minimum
+        content_width = self.card_bg.winfo_reqwidth()
+        content_height = self.card_bg.winfo_reqheight()
+        
+        # Ensure minimum meets content needs with small buffer
+        self._content_min_size = (
+            max(content_width, 380),
+            max(content_height, 300)
+        )
+        
+        # Now enable fixed sizing for responsive behavior
+        self.card_bg.pack_propagate(False)
+        
+        # Calculate and apply initial size based on current window
+        self._update_card_size()
+        
+        # Bind to window resize events
+        self.root.bind("<Configure>", self._on_window_configure, add="+")
+    
+    def _calculate_card_size(self) -> tuple:
+        """
+        Calculate optimal card size based on window dimensions.
+        
+        The card grows conservatively - just enough to fit content comfortably,
+        with modest scaling on larger screens (up to 10% extra breathing room).
+        
+        Returns:
+            Tuple of (width, height) for the card.
+        """
+        # Get minimum from content (or fallback)
+        min_width, min_height = self._content_min_size or (380, 300)
+        
+        # Get current window size
+        window_width = self.root.winfo_width()
+        window_height = self.root.winfo_height()
+        
+        # Fallback if window not yet sized
+        if window_width < 100 or window_height < 100:
+            window_width = self.scaling_manager.screen_width * 0.4
+            window_height = self.scaling_manager.screen_height * 0.5
+        
+        # Calculate how much extra space is available beyond content needs
+        # Card should only grow modestly (up to 10% extra) on larger screens
+        available_width = window_width - 80  # Margins
+        available_height = window_height - 160  # Logo + margins
+        
+        # Start with content size and add modest breathing room based on available space
+        # Scale factor: 1.0 at minimum window size, up to 1.10 at large window sizes
+        width_ratio = min(available_width / min_width, 1.5) if min_width > 0 else 1.0
+        height_ratio = min(available_height / min_height, 1.5) if min_height > 0 else 1.0
+        
+        # Use the smaller ratio to maintain aspect ratio, capped at 10% growth
+        scale_factor = min(width_ratio, height_ratio, 1.10)
+        scale_factor = max(scale_factor, 1.0)  # Never shrink below content size
+        
+        card_width = min_width * scale_factor
+        card_height = min_height * scale_factor
+        
+        # Clamp to min/max bounds
+        card_width = max(min_width, min(card_width, self._card_max_width))
+        card_height = max(min_height, min(card_height, self._card_max_height))
+        
+        return int(card_width), int(card_height)
+    
+    def _update_card_size(self):
+        """Update the card size based on current window dimensions."""
+        if not self.card_bg:
+            return
+        
+        new_width, new_height = self._calculate_card_size()
+        
+        # Only update if size changed significantly (avoid jitter)
+        if self._last_card_size:
+            old_w, old_h = self._last_card_size
+            if abs(new_width - old_w) < 3 and abs(new_height - old_h) < 3:
+                return
+        
+        self._last_card_size = (new_width, new_height)
+        self.card_bg.configure(width=new_width, height=new_height)
+    
+    def _on_window_configure(self, event):
+        """Handle window configure (resize) events."""
+        # Only respond to root window resize, not child widget events
+        if event.widget != self.root:
+            return
+        
+        # Debounce rapid resize events
+        if hasattr(self, '_resize_after_id'):
+            self.root.after_cancel(self._resize_after_id)
+        
+        self._resize_after_id = self.root.after(50, self._update_card_size)
 
     def _setup_ui(self):
         """Set up the payment screen UI."""
@@ -436,20 +553,14 @@ class PaymentScreen:
             )
             title_label.pack()
         
-        # Main Card Container
-        base_card_width, base_card_height = 550, 395
-        self.card_width = self._scale_dimension(base_card_width, min_value=400)
-        self.card_height = self._scale_dimension(base_card_height, min_value=310)
-        
+        # Main Card Container - initially let content determine size
+        # Size will be made responsive after layout via _initialize_responsive_card
         self.card_bg = ctk.CTkFrame(
             self.center_container,
-            width=self.card_width,
-            height=self.card_height,
             corner_radius=28,
             fg_color=COLORS["surface"]
         )
         self.card_bg.pack()
-        self.card_bg.pack_propagate(False)
         
         # Inner Frame for widgets
         inner_padding = self._scale_padding(30)
@@ -660,6 +771,10 @@ class PaymentScreen:
                             "Payment successful!",
                             is_success=True
                         ))
+                        # Schedule auto-activation after delay so user can see success message
+                        # This handles case where user already Command-tabbed to app before
+                        # verification completed - no need to wait for another focus event
+                        self.root.after(1500, self._try_auto_activate)
                         break
                     
                 except Exception as e:
@@ -707,6 +822,10 @@ class PaymentScreen:
                     "Payment successful!",
                     is_success=True
                 ))
+                # Schedule auto-activation after delay so user can see success message
+                # This handles case where user already Command-tabbed to app before
+                # verification completed - no need to wait for another focus event
+                self.root.after(1500, self._try_auto_activate)
             else:
                 self.root.after(0, lambda: self._update_status(
                     "Payment verification failed", is_error=True
@@ -733,6 +852,36 @@ class PaymentScreen:
                 self._payment_info = None
             else:
                 return
+        
+        self._complete_activation(session_id, payment_info)
+    
+    def _try_auto_activate(self):
+        """
+        Try to automatically complete activation after payment verification.
+        
+        Called after showing 'Payment successful!' message, with a delay to
+        allow user to see the message. This handles the case where user
+        Command-tabs to the app before payment verification completes -
+        when verification finishes, the app proceeds automatically without
+        requiring another focus event.
+        """
+        with self._polling_lock:
+            # Already activated via focus event - nothing to do
+            if self._payment_detected:
+                return
+            
+            # Payment not ready yet - shouldn't happen but guard anyway
+            if not (self._payment_ready and self._payment_session_id and self._payment_info):
+                return
+            
+            # Proceed with activation
+            logger.info("Auto-activating license after payment verification")
+            self._payment_detected = True
+            self._payment_ready = False
+            session_id = self._payment_session_id
+            payment_info = self._payment_info
+            self._payment_session_id = None
+            self._payment_info = None
         
         self._complete_activation(session_id, payment_info)
     
@@ -870,8 +1019,16 @@ class PaymentScreen:
         try:
             self.root.unbind("<Activate>")
             self.root.unbind("<FocusIn>")
+            self.root.unbind("<Configure>")
         except Exception:
             pass
+        
+        # Cancel any pending resize callback
+        if hasattr(self, '_resize_after_id'):
+            try:
+                self.root.after_cancel(self._resize_after_id)
+            except Exception:
+                pass
         
         self._payment_ready = False
         self._payment_session_id = None
@@ -898,8 +1055,16 @@ class PaymentScreen:
         try:
             self.root.unbind("<Activate>")
             self.root.unbind("<FocusIn>")
+            self.root.unbind("<Configure>")
         except Exception:
             pass
+        
+        # Cancel any pending resize callback
+        if hasattr(self, '_resize_after_id'):
+            try:
+                self.root.after_cancel(self._resize_after_id)
+            except Exception:
+                pass
         
         self._payment_ready = False
         self._payment_session_id = None
