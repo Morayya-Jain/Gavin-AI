@@ -21,7 +21,7 @@ wheels/
 # PyInstaller
 dist/
 build/pyinstaller-work/
-build/BrainDock/
+build/braindock/
 *.manifest
 *.spec.bak
 

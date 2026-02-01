@@ -38,7 +38,7 @@ DefaultGroupName={#MyAppName}
 
 ; Output settings
 OutputDir=..\dist
-OutputBaseFilename=BrainDock-{#MyAppVersion}-Setup
+OutputBaseFilename=BrainDock-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 
@@ -68,9 +68,6 @@ DisableWelcomePage=no
 
 ; Allow user to see what's happening
 ShowLanguageDialog=auto
-
-; License file (generated from legal/TERMS_AND_CONDITIONS.md at build time)
-LicenseFile=license.txt
 
 ; Minimum Windows version (Windows 10+)
 MinVersion=10.0

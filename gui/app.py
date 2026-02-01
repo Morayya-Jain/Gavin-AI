@@ -1632,10 +1632,42 @@ class BrainDockGUI:
         # Set CustomTkinter appearance mode (light theme)
         ctk.set_appearance_mode("light")
         
+        # Windows taskbar icon fix - set AppUserModelID before window creation
+        # This allows Windows to properly associate the taskbar icon with the app
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                # Set AppUserModelID so Windows groups the app correctly in taskbar
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('com.braindock.app')
+            except Exception as e:
+                logger.debug(f"Could not set AppUserModelID: {e}")
+        
         # Create CustomTkinter root window
         self.root = ctk.CTk()
-        self.root.title("")  # Empty title - no text in title bar
+        
+        # Set window title - empty on macOS (clean look), "BrainDock" on Windows
+        # Windows falls back to showing "BrainDock.exe" if title is empty
+        if sys.platform == 'win32':
+            self.root.title("BrainDock")
+        else:
+            self.root.title("")  # Empty title on macOS - no text in title bar
+        
         self.root.configure(fg_color=COLORS["bg_primary"])
+        
+        # Set window icon (important for Windows taskbar)
+        if sys.platform == 'win32':
+            try:
+                # Try bundled icon first (PyInstaller), then development path
+                if getattr(sys, 'frozen', False):
+                    icon_path = Path(sys._MEIPASS) / 'assets' / 'icon.ico'
+                else:
+                    icon_path = config.BASE_DIR / 'build' / 'icon.ico'
+                
+                if icon_path.exists():
+                    self.root.iconbitmap(str(icon_path))
+                    logger.debug(f"Set window icon from: {icon_path}")
+            except Exception as e:
+                logger.debug(f"Could not set window icon: {e}")
         
         # Set light appearance on macOS (makes title bar white instead of dark)
         if sys.platform == "darwin":

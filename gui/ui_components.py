@@ -587,6 +587,7 @@ class StyledEntry(ctk.CTkFrame):
         self.placeholder = placeholder
         self.command = None
         self._has_feedback = False
+        self._persistent_message = False  # If True, message won't be cleared by key press
         
         # Main entry widget
         self.entry = ctk.CTkEntry(
@@ -630,23 +631,40 @@ class StyledEntry(ctk.CTkFrame):
         self.error_label.configure(text=message, text_color=COLORS["status_gadget"])
         self.entry.configure(border_color=COLORS["status_gadget"])
         self._has_feedback = True
+        self._persistent_message = False  # Errors can be cleared
     
     def show_success(self, message: str):
         """Show a success message with green border."""
         self.error_label.configure(text=message, text_color=COLORS["success"])
         self.entry.configure(border_color=COLORS["success"])
         self._has_feedback = True
+        self._persistent_message = False  # Success can be cleared
     
-    def show_info(self, message: str):
-        """Show info message without changing border color."""
+    def show_info(self, message: str, persistent: bool = False):
+        """
+        Show info message without changing border color.
+        
+        Args:
+            message: The message to display.
+            persistent: If True, message won't be cleared by key presses.
+        """
         self.error_label.configure(text=message, text_color=COLORS["text_secondary"])
         self._has_feedback = True
+        self._persistent_message = persistent
     
-    def clear_error(self):
-        """Clear error state."""
+    def clear_error(self, force: bool = False):
+        """
+        Clear error state.
+        
+        Args:
+            force: If True, clears even persistent messages.
+        """
+        if self._persistent_message and not force:
+            return  # Don't clear persistent messages
         self.error_label.configure(text=" ")
         self.entry.configure(border_color=COLORS["accent"] if self.entry == self.focus_get() else COLORS["input_bg"])
         self._has_feedback = False
+        self._persistent_message = False
     
     def _update_wraplength(self, event=None):
         """Update the wraplength of error_label to match the widget width."""

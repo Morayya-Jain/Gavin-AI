@@ -11,17 +11,19 @@
 #      - STRIPE_SECRET_KEY (optional, for payments)
 #      - STRIPE_PUBLISHABLE_KEY (optional, for payments)
 #      - STRIPE_PRICE_ID (optional, for payments)
-#      - APPLE_CERTIFICATE_BASE64 (required for signing)
-#      - APPLE_CERTIFICATE_PASSWORD (required for signing)
-#      - APPLE_ID (required for notarization)
-#      - APPLE_APP_SPECIFIC_PASSWORD (required for notarization)
-#      - APPLE_TEAM_ID (required for notarization)
+#      - APPLE_CERTIFICATE_BASE64 (required for macOS signing)
+#      - APPLE_CERTIFICATE_PASSWORD (required for macOS signing)
+#      - APPLE_ID (required for macOS notarization)
+#      - APPLE_APP_SPECIFIC_PASSWORD (required for macOS notarization)
+#      - APPLE_TEAM_ID (required for macOS notarization)
+#      - WINDOWS_CERTIFICATE_BASE64 (optional - for Windows code signing)
+#      - WINDOWS_CERTIFICATE_PASSWORD (optional - for Windows code signing)
 #   2. Push a tag: git tag v1.0.0 && git push origin v1.0.0
 #   3. The workflow will build, sign, notarize, and create a release
 #
 # The release will contain:
 #   - BrainDock-macOS.dmg (signed & notarized macOS installer)
-#   - BrainDock-Windows.zip (Windows .exe)
+#   - BrainDock-Setup.exe (Windows installer, signed if certificate configured)
 
 name: Build and Release
 
@@ -339,6 +341,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix for installer version (v1.0.0 -> 1.0.0)
+          VERSION_NUM="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_NUM=$VERSION_NUM" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION (numeric: $VERSION_NUM)"
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -349,6 +366,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
+      
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
       
       - name: Generate icons
         run: python build/create_icons.py
@@ -394,16 +415,75 @@ jobs:
         run: |
           pyinstaller build/braindock.spec --noconfirm
       
-      - name: Create ZIP archive
+      - name: Update installer version
+        shell: python
         run: |
-          cd dist
-          Compress-Archive -Path BrainDock -DestinationPath BrainDock-Windows.zip
+          version = "${{ steps.get_version.outputs.VERSION_NUM }}"
+          with open('build/installer.iss', 'r') as f:
+              content = f.read()
+          content = content.replace('#define MyAppVersion "1.0.0"', 
+                                    f'#define MyAppVersion "{version}"')
+          with open('build/installer.iss', 'w') as f:
+              f.write(content)
+          print(f"Updated installer version to {version}")
+      
+      - name: Build Windows Installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss
+      
+      - name: Sign Windows Installer (Optional)
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          # Check if certificate is configured - skip if not
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_BASE64)) {
+            Write-Host "No Windows certificate configured, skipping code signing" -ForegroundColor Yellow
+            Write-Host "To enable signing, add WINDOWS_CERTIFICATE_BASE64 and WINDOWS_CERTIFICATE_PASSWORD secrets"
+            exit 0
+          }
+          
+          Write-Host "Certificate found, signing installer..." -ForegroundColor Green
+          
+          # Decode certificate
+          $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64)
+          $certPath = "$env:RUNNER_TEMP\certificate.pfx"
+          [IO.File]::WriteAllBytes($certPath, $certBytes)
+          
+          # Find signtool dynamically (SDK version varies on runners)
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue | 
+                      Where-Object { $_.FullName -match "x64" } | 
+                      Sort-Object { $_.Directory.Name } -Descending |
+                      Select-Object -First 1 -ExpandProperty FullName
+          
+          if (-not $signtool) {
+            Write-Error "signtool.exe not found in Windows SDK"
+            Remove-Item $certPath -Force -ErrorAction SilentlyContinue
+            exit 1
+          }
+          
+          Write-Host "Using signtool: $signtool"
+          
+          # Sign the installer
+          & $signtool sign /f $certPath /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 /d "BrainDock" "dist\BrainDock-Setup.exe"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Signing failed with exit code $LASTEXITCODE"
+            Remove-Item $certPath -Force -ErrorAction SilentlyContinue
+            exit 1
+          }
+          
+          # Clean up
+          Remove-Item $certPath -Force
+          
+          Write-Host "Installer signed successfully!" -ForegroundColor Green
       
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: BrainDock-Windows
-          path: dist/BrainDock-Windows.zip
+          path: dist/BrainDock-Setup.exe
           if-no-files-found: error
 
   # Create GitHub Release with both artifacts
@@ -453,7 +533,7 @@ jobs:
             | Platform | Download |
             |----------|----------|
             | macOS | [BrainDock-macOS.dmg](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-macOS.dmg) |
-            | Windows | [BrainDock-Windows.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-Windows.zip) |
+            | Windows | [BrainDock-Setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-Setup.exe) |
             
             ### Installation Instructions
             
@@ -464,9 +544,10 @@ jobs:
             4. Open BrainDock from Applications
             
             **Windows:**
-            1. Extract the ZIP file
-            2. Run BrainDock.exe
-            3. If SmartScreen appears, click "More info" then "Run anyway"
+            1. Download and run BrainDock-Setup.exe
+            2. Follow the installation wizard
+            3. Launch BrainDock from Start Menu or Desktop
+            4. If SmartScreen appears, click "More info" then "Run anyway"
             
             ### Requirements
             - A webcam for focus monitoring
@@ -475,6 +556,6 @@ jobs:
           prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
           files: |
             ./release/BrainDock-macOS.dmg
-            ./release/BrainDock-Windows.zip
+            ./release/BrainDock-Setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

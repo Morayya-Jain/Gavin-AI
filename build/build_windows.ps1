@@ -119,52 +119,6 @@ if (-not $InnoSetup) {
 
 Write-Host "Inno Setup found: $InnoSetup" -ForegroundColor Green
 
-# Generate license.txt from Terms and Conditions for installer
-Write-Host ""
-Write-Host "Generating license file for installer..." -ForegroundColor Yellow
-
-$TermsFile = "$ProjectRoot\legal\TERMS_AND_CONDITIONS.md"
-$LicenseFile = "$ScriptDir\license.txt"
-
-if (Test-Path $TermsFile) {
-    # Read the markdown file and convert to plain text
-    $content = Get-Content $TermsFile -Raw
-    
-    # Remove YAML front matter
-    $content = $content -replace "(?s)^---.*?---\s*", ""
-    
-    # Remove markdown headers (keep text) - use (?m) for multiline mode
-    $content = $content -replace "(?m)^#{1,6}\s*", "" 
-    
-    # Remove markdown bold/italic
-    $content = $content -replace "\*\*([^*]+)\*\*", '$1'
-    $content = $content -replace "\*([^*]+)\*", '$1'
-    
-    # Remove markdown links, keep text
-    $content = $content -replace "\[([^\]]+)\]\([^)]+\)", '$1'
-    
-    # Clean up multiple blank lines
-    $content = $content -replace "(\r?\n){3,}", "`r`n`r`n"
-    
-    # Write to license.txt (UTF-8 without BOM)
-    [System.IO.File]::WriteAllText($LicenseFile, $content.Trim(), [System.Text.UTF8Encoding]::new($false))
-    
-    Write-Host "License file generated: $LicenseFile" -ForegroundColor Green
-} else {
-    Write-Host "Warning: Terms file not found at $TermsFile" -ForegroundColor Yellow
-    Write-Host "Creating minimal license file..." -ForegroundColor Yellow
-    
-    $minimalLicense = @"
-BrainDock - Terms of Use
-
-By installing and using BrainDock, you agree to the terms and conditions
-available at https://thebraindock.com/legal/terms/
-
-Copyright (c) 2026 BrainDock. All rights reserved.
-"@
-    [System.IO.File]::WriteAllText($LicenseFile, $minimalLicense, [System.Text.UTF8Encoding]::new($false))
-}
-
 # Clean previous builds
 Write-Host ""
 Write-Host "Cleaning previous builds..." -ForegroundColor Yellow

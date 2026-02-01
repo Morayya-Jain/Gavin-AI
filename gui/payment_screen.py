@@ -333,7 +333,9 @@ class PaymentScreen:
         
         self._setup_ui()
         
-        # Bind focus event to detect when user returns to app
+        # Bind focus events to detect when user returns to app
+        # Use both <Activate> (reliable on macOS) and <FocusIn> (fallback)
+        self.root.bind("<Activate>", self._on_window_focus)
         self.root.bind("<FocusIn>", self._on_window_focus)
     
     def _clear_entry_feedback(self, event=None):
@@ -594,8 +596,16 @@ class PaymentScreen:
             skip_label.pack(pady=(self._scale_padding(20), 0))
             skip_label.bind("<Button-1>", lambda e: self._skip_for_dev())
     
-    def _update_status(self, message: str, is_error: bool = False, is_success: bool = False):
-        """Update the status message via the session entry's inline display."""
+    def _update_status(self, message: str, is_error: bool = False, is_success: bool = False, persistent: bool = False):
+        """
+        Update the status message via the session entry's inline display.
+        
+        Args:
+            message: The status message to display.
+            is_error: Show as error (red).
+            is_success: Show as success (green).
+            persistent: If True, message won't be cleared by typing.
+        """
         if not self.session_entry:
             return
         
@@ -604,7 +614,7 @@ class PaymentScreen:
         elif is_success:
             self.session_entry.show_success(message)
         else:
-            self.session_entry.show_info(message)
+            self.session_entry.show_info(message, persistent=persistent)
     
     def _start_payment_polling(self, session_id: str):
         """Start background polling to check payment status."""
@@ -640,19 +650,16 @@ class PaymentScreen:
                     is_paid, info = self.stripe.verify_session(session_id)
                     
                     if is_paid:
-                        logger.info("Payment detected via polling - completing activation")
+                        logger.info("Payment detected via polling - waiting for user to return")
                         with self._polling_lock:
                             self._polling_active = False
-                            self._payment_detected = True  # Mark as detected
-                            self._payment_ready = False
-                        # Capture info for the lambda closure
-                        payment_info = info
+                            self._payment_ready = True
+                            self._payment_session_id = session_id
+                            self._payment_info = info
                         self.root.after(0, lambda: self._update_status(
-                            "Payment successful! Starting app...",
+                            "Payment successful!",
                             is_success=True
                         ))
-                        # Automatically complete activation after a short delay
-                        self.root.after(1500, lambda sid=session_id, pi=payment_info: self._complete_activation(sid, pi))
                         break
                     
                 except Exception as e:
@@ -692,15 +699,14 @@ class PaymentScreen:
             is_paid, info = self.stripe.verify_session(session_id)
             if is_paid:
                 with self._polling_lock:
-                    self._payment_detected = True  # Mark as detected to prevent duplicate activations
-                    self._payment_ready = False
-                logger.info("Payment verified via redirect")
+                    self._payment_ready = True
+                    self._payment_session_id = session_id
+                    self._payment_info = info
+                logger.info("Payment verified via redirect - waiting for user to return")
                 self.root.after(0, lambda: self._update_status(
-                    "Payment successful! Starting app...",
+                    "Payment successful!",
                     is_success=True
                 ))
-                # Automatically complete activation after a short delay
-                self.root.after(1500, lambda: self._complete_activation(session_id, info))
             else:
                 self.root.after(0, lambda: self._update_status(
                     "Payment verification failed", is_error=True
@@ -710,8 +716,8 @@ class PaymentScreen:
     
     def _on_window_focus(self, event):
         """Handle window focus event (user Command-Tabs back to app)."""
-        if event.widget != self.root:
-            return
+        # Don't filter by event.widget - focus can go to any child widget when
+        # user returns to app. The _payment_detected flag handles deduplication.
         
         with self._polling_lock:
             if self._payment_detected:
@@ -763,7 +769,7 @@ class PaymentScreen:
                 )
                 return
             
-            self._update_status("Opening payment page...")
+            self._update_status("Opening payment page...", persistent=True)
             
             self._local_server = LocalPaymentServer(callback=self._on_redirect_received)
             server_started = self._local_server.start()
@@ -820,7 +826,7 @@ class PaymentScreen:
             if error:
                 self._update_status(error, is_error=True)
             else:
-                self._update_status("Complete payment in browser.")
+                self._update_status("Complete payment in browser.", persistent=True)
     
     def _on_verify_payment(self):
         """Handle verify payment button click."""
@@ -862,6 +868,7 @@ class PaymentScreen:
     def _activation_success(self):
         """Handle successful license activation."""
         try:
+            self.root.unbind("<Activate>")
             self.root.unbind("<FocusIn>")
         except Exception:
             pass
@@ -889,6 +896,7 @@ class PaymentScreen:
     def destroy(self):
         """Clean up the payment screen."""
         try:
+            self.root.unbind("<Activate>")
             self.root.unbind("<FocusIn>")
         except Exception:
             pass

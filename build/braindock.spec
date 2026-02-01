@@ -42,8 +42,6 @@ datas = [
     # Assets (includes fonts in assets/fonts/ for cross-platform typography)
     # Bundled fonts: Inter (sans-serif), Lora (serif) - both SIL Open Font License
     (str(PROJECT_ROOT / 'assets'), 'assets'),
-    # Legal documents
-    (str(PROJECT_ROOT / 'legal'), 'legal'),
 ]
 
 # Add bundled_keys.py if it exists (generated at build time with API keys)
@@ -84,6 +82,12 @@ if IS_WINDOWS:
         datas += collect_data_files('tzdata')
     except Exception:
         print("WARNING: Could not collect tzdata - timezone initialization may be slow on Windows")
+    
+    # Add Windows icon for taskbar (must be bundled for runtime use)
+    # The .ico file is used by the app at runtime to set the taskbar icon
+    icon_ico_path = SPEC_DIR / 'icon.ico'
+    if icon_ico_path.exists():
+        datas.append((str(icon_ico_path), 'assets'))
 
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [
