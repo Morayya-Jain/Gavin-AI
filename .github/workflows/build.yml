@@ -39,7 +39,9 @@ on:
         default: 'v1.0.0-test'
 
 env:
-  PYTHON_VERSION: '3.11'
+  # IMPORTANT: Must match local development Python version for consistent UI rendering
+  # CustomTkinter and tkinter behave differently between Python versions
+  PYTHON_VERSION: '3.14'
 
 jobs:
   # Build macOS app (signed and notarized)
@@ -133,7 +135,28 @@ jobs:
             --distpath dist \
             --workpath build/pyinstaller-work \
             --noconfirm
-      
+
+      - name: Verify bundled assets
+        run: |
+          echo "=== Checking bundled CustomTkinter assets ==="
+          CTK_PATH="dist/BrainDock.app/Contents/Resources/customtkinter"
+          if [ -d "$CTK_PATH" ]; then
+            echo "CustomTkinter directory found at: $CTK_PATH"
+            find "$CTK_PATH" -type f | head -20
+          else
+            echo "WARNING: CustomTkinter directory NOT found at $CTK_PATH"
+            echo "Searching for customtkinter assets..."
+            find dist/BrainDock.app -name "*customtkinter*" -o -name "*.otf" 2>/dev/null | head -20
+          fi
+
+          echo ""
+          echo "=== Checking bundled app data ==="
+          ls -la "dist/BrainDock.app/Contents/Resources/" | head -20
+
+          echo ""
+          echo "=== App bundle size ==="
+          du -sh dist/BrainDock.app
+
       - name: Install Apple Developer Certificate
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}

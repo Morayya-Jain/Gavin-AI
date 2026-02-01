@@ -67,9 +67,31 @@ except ImportError:
 # Without this, CTkScrollableFrame and other widgets have viewport/layout issues
 # that cause content to be invisible or incorrectly positioned
 try:
-    datas += collect_data_files('customtkinter')
-except Exception:
-    print("WARNING: Could not collect customtkinter assets - UI may have rendering issues")
+    ctk_datas = collect_data_files('customtkinter')
+    if ctk_datas:
+        print(f"INFO: Collected {len(ctk_datas)} customtkinter data files")
+        datas += ctk_datas
+    else:
+        print("WARNING: collect_data_files returned empty for customtkinter")
+        # Fallback: manually find customtkinter assets
+        import customtkinter
+        ctk_path = Path(customtkinter.__file__).parent
+        ctk_assets = ctk_path / 'assets'
+        if ctk_assets.exists():
+            print(f"INFO: Manually adding customtkinter assets from {ctk_assets}")
+            datas.append((str(ctk_assets), 'customtkinter/assets'))
+except Exception as e:
+    print(f"WARNING: Could not collect customtkinter assets: {e}")
+    # Fallback: try to find customtkinter manually
+    try:
+        import customtkinter
+        ctk_path = Path(customtkinter.__file__).parent
+        ctk_assets = ctk_path / 'assets'
+        if ctk_assets.exists():
+            print(f"INFO: Fallback - adding customtkinter assets from {ctk_assets}")
+            datas.append((str(ctk_assets), 'customtkinter/assets'))
+    except Exception as e2:
+        print(f"ERROR: Could not find customtkinter assets: {e2} - UI may have rendering issues")
 
 # Windows-only: Bundle timezone data (tzdata package)
 # On Windows, Python uses tzdata for timezone info since the OS doesn't have
