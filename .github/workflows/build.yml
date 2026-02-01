@@ -55,18 +55,29 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: Install dependencies
+      - name: Create virtual environment and install dependencies
         run: |
+          # Create isolated virtual environment (matches local build process)
+          python -m venv .venv-build
+          source .venv-build/bin/activate
+
+          # Upgrade pip and install dependencies
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-      
+
+          # Verify we're using the venv Python
+          echo "Python location: $(which python)"
+          echo "Pip location: $(which pip)"
+
       - name: Install create-dmg
         run: brew install create-dmg
-      
+
       - name: Generate icons
-        run: python build/create_icons.py
-      
+        run: |
+          source .venv-build/bin/activate
+          python build/create_icons.py
+
       - name: Generate bundled keys module
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -77,7 +88,7 @@ jobs:
         shell: python
         run: |
           import os
-          
+
           def get_clean_key(env_var):
               """Get env var, strip whitespace, escape for Python string literal."""
               value = os.environ.get(env_var, '').strip()
@@ -85,7 +96,7 @@ jobs:
                   return ''
               # Escape backslashes, quotes, and newlines for safe Python string
               return value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
-          
+
           # Get and escape all keys
           keys = {
               'OPENAI_API_KEY': get_clean_key('OPENAI_API_KEY'),
@@ -94,7 +105,7 @@ jobs:
               'STRIPE_PUBLISHABLE_KEY': get_clean_key('STRIPE_PUBLISHABLE_KEY'),
               'STRIPE_PRICE_ID': get_clean_key('STRIPE_PRICE_ID'),
           }
-          
+
           # Generate bundled_keys.py (imported by config.py at runtime)
           with open('bundled_keys_template.py', 'r') as f:
               content = f.read()
@@ -103,10 +114,25 @@ jobs:
           with open('bundled_keys.py', 'w') as f:
               f.write(content)
           print("bundled_keys.py generated with embedded keys")
-      
+
+      - name: Clean previous build artifacts
+        run: |
+          # Clean any cached build artifacts to ensure fresh build
+          rm -rf dist/BrainDock dist/BrainDock.app build/braindock build/pyinstaller-work
+          echo "Cleaned build directories"
+
       - name: Build with PyInstaller
         run: |
-          pyinstaller build/braindock.spec --noconfirm
+          source .venv-build/bin/activate
+
+          # Verify PyInstaller is from venv
+          echo "PyInstaller location: $(which pyinstaller)"
+
+          # Build with explicit paths (matches local build script)
+          pyinstaller build/braindock.spec \
+            --distpath dist \
+            --workpath build/pyinstaller-work \
+            --noconfirm
       
       - name: Install Apple Developer Certificate
         env:
@@ -361,19 +387,31 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       
-      - name: Install dependencies
+      - name: Create virtual environment and install dependencies
         run: |
+          # Create isolated virtual environment (matches local build process)
+          python -m venv .venv-build
+          .venv-build\Scripts\activate
+
+          # Upgrade pip and install dependencies
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
-      
+
+          # Verify we're using the venv Python
+          Write-Host "Python location: $(Get-Command python | Select-Object -ExpandProperty Source)"
+        shell: pwsh
+
       - name: Install Inno Setup
         run: |
           choco install innosetup -y
-      
+
       - name: Generate icons
-        run: python build/create_icons.py
-      
+        run: |
+          .venv-build\Scripts\activate
+          python build/create_icons.py
+        shell: pwsh
+
       - name: Generate bundled keys module
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -384,7 +422,7 @@ jobs:
         shell: python
         run: |
           import os
-          
+
           def get_clean_key(env_var):
               """Get env var, strip whitespace, escape for Python string literal."""
               value = os.environ.get(env_var, '').strip()
@@ -392,7 +430,7 @@ jobs:
                   return ''
               # Escape backslashes, quotes, and newlines for safe Python string
               return value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
-          
+
           # Get and escape all keys
           keys = {
               'OPENAI_API_KEY': get_clean_key('OPENAI_API_KEY'),
@@ -401,7 +439,7 @@ jobs:
               'STRIPE_PUBLISHABLE_KEY': get_clean_key('STRIPE_PUBLISHABLE_KEY'),
               'STRIPE_PRICE_ID': get_clean_key('STRIPE_PRICE_ID'),
           }
-          
+
           # Generate bundled_keys.py (imported by config.py at runtime)
           with open('bundled_keys_template.py', 'r') as f:
               content = f.read()
@@ -410,10 +448,26 @@ jobs:
           with open('bundled_keys.py', 'w') as f:
               f.write(content)
           print("bundled_keys.py generated with embedded keys")
-      
+
+      - name: Clean previous build artifacts
+        run: |
+          # Clean any cached build artifacts to ensure fresh build
+          if (Test-Path dist\BrainDock) { Remove-Item -Recurse -Force dist\BrainDock }
+          if (Test-Path build\braindock) { Remove-Item -Recurse -Force build\braindock }
+          if (Test-Path build\pyinstaller-work) { Remove-Item -Recurse -Force build\pyinstaller-work }
+          Write-Host "Cleaned build directories"
+        shell: pwsh
+
       - name: Build with PyInstaller
         run: |
-          pyinstaller build/braindock.spec --noconfirm
+          .venv-build\Scripts\activate
+
+          # Verify PyInstaller is from venv
+          Write-Host "PyInstaller location: $(Get-Command pyinstaller | Select-Object -ExpandProperty Source)"
+
+          # Build with explicit paths (matches local build script)
+          pyinstaller build/braindock.spec --distpath dist --workpath build/pyinstaller-work --noconfirm
+        shell: pwsh
       
       - name: Update installer version
         shell: python
