@@ -6263,8 +6263,56 @@ class BrainDockGUI:
         self.root.mainloop()
 
 
+def _setup_debug_logging():
+    """
+    Set up debug logging to a file.
+    
+    Creates a simple debug log file to help troubleshoot Windows issues.
+    Returns the log file path.
+    """
+    import sys
+    from datetime import datetime
+    
+    try:
+        # Ensure user data directory exists
+        config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        
+        debug_file = config.USER_DATA_DIR / "debug.txt"
+        log_file = config.USER_DATA_DIR / "braindock.log"
+        
+        # Write a simple debug file to confirm we can write
+        with open(debug_file, 'a', encoding='utf-8') as f:
+            f.write(f"\n--- BrainDock started at {datetime.now()} ---\n")
+            f.write(f"Platform: {sys.platform}\n")
+            f.write(f"User data dir: {config.USER_DATA_DIR}\n")
+            f.write(f"Python: {sys.version}\n")
+        
+        return log_file, debug_file
+    except Exception as e:
+        # Try alternate location - user's home directory
+        try:
+            from pathlib import Path
+            alt_dir = Path.home() / "BrainDock_logs"
+            alt_dir.mkdir(parents=True, exist_ok=True)
+            
+            debug_file = alt_dir / "debug.txt"
+            log_file = alt_dir / "braindock.log"
+            
+            with open(debug_file, 'a', encoding='utf-8') as f:
+                f.write(f"\n--- BrainDock started at {datetime.now()} ---\n")
+                f.write(f"Original error: {e}\n")
+                f.write(f"Using alternate dir: {alt_dir}\n")
+            
+            return log_file, debug_file
+        except Exception as e2:
+            return None, None
+
+
 def main():
     """Entry point for the GUI application."""
+    # Set up debug logging first (before anything else)
+    log_file, debug_file = _setup_debug_logging()
+    
     # Configure logging - both console and file
     log_level = getattr(logging, config.LOG_LEVEL)
     log_format = config.LOG_FORMAT
@@ -6278,15 +6326,14 @@ def main():
     console_handler.setFormatter(formatter)
     
     # File handler - write to user data directory for debugging
-    log_file = config.USER_DATA_DIR / "braindock.log"
     file_handler = None
-    try:
-        config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
-        file_handler.setFormatter(formatter)
-    except Exception as e:
-        print(f"Warning: Could not create log file: {e}")
+    if log_file:
+        try:
+            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+            file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
+            file_handler.setFormatter(formatter)
+        except Exception as e:
+            print(f"Warning: Could not create log file handler: {e}")
     
     # Configure root logger
     root_logger = logging.getLogger()
@@ -6295,7 +6342,10 @@ def main():
     if file_handler:
         root_logger.addHandler(file_handler)
     
-    logger.info(f"BrainDock starting, log file: {log_file}")
+    if log_file:
+        logger.info(f"BrainDock starting, log file: {log_file}")
+    if debug_file:
+        logger.info(f"Debug file: {debug_file}")
     
     # Suppress noisy third-party logs
     logging.getLogger("httpx").setLevel(logging.WARNING)

@@ -315,6 +315,28 @@ class WindowDetector:
             logger.debug(f"Could not get browser URL: {e}")
             return None
     
+    def _write_debug(self, message: str):
+        """Write debug info to a file (fallback when logging doesn't work)."""
+        try:
+            import os
+            from pathlib import Path
+            from datetime import datetime
+            
+            # Try AppData first, then home directory
+            appdata = os.environ.get('APPDATA')
+            if appdata:
+                debug_dir = Path(appdata) / "BrainDock"
+            else:
+                debug_dir = Path.home() / "BrainDock_logs"
+            
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_file = debug_dir / "screen_debug.txt"
+            
+            with open(debug_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
+        except Exception:
+            pass  # Silently ignore if debug writing fails
+    
     def _get_active_window_windows(self) -> Optional[WindowInfo]:
         """
         Get active window info on Windows using ctypes (standard library).
@@ -336,6 +358,7 @@ class WindowDetector:
             
             if not hwnd:
                 logger.warning("Windows: No foreground window found")
+                self._write_debug("ERROR: No foreground window found")
                 self._has_permission = False
                 return None
             
@@ -355,7 +378,9 @@ class WindowDetector:
             self._has_permission = True
             
             # Log what we detected (INFO level for visibility)
-            logger.info(f"Windows detection: app='{app_name}', title='{window_title[:50]}...'")
+            debug_msg = f"app='{app_name}', title='{window_title[:50]}'"
+            logger.info(f"Windows detection: {debug_msg}")
+            self._write_debug(f"DETECTED: {debug_msg}")
             
             # Check if it's a browser using comprehensive list
             app_name_lower = app_name.lower()
@@ -363,15 +388,19 @@ class WindowDetector:
             url = None
             page_title = None
             
-            logger.info(f"Windows detection: is_browser={is_browser} (app_lower='{app_name_lower}')")
+            debug_msg = f"is_browser={is_browser}, app_lower='{app_name_lower}'"
+            logger.info(f"Windows detection: {debug_msg}")
+            self._write_debug(f"BROWSER CHECK: {debug_msg}")
             
             if is_browser:
                 # Extract page title from window title (works for all browsers)
                 page_title = self._extract_page_title_from_window(window_title)
+                self._write_debug(f"PAGE TITLE: '{page_title}'")
                 logger.info(f"Windows detection: extracted page_title='{page_title}'")
                 
                 # Try to get actual URL (requires pywinauto or UI Automation)
                 url = self._get_browser_url_windows(hwnd, app_name_lower)
+                self._write_debug(f"URL: '{url}'")
                 logger.info(f"Windows detection: url='{url}'")
             
             return WindowInfo(
