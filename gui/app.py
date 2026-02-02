@@ -609,9 +609,7 @@ from gui.ui_components import (
     get_screen_scale_factor,
     normalize_tk_scaling,
     setup_natural_scroll,
-    create_scrollable_frame,
-    get_system_dpi_scale,
-    get_dpi_scaled_font_size
+    create_scrollable_frame
 )
 
 # Base dimensions for scaling (larger default window) - keep for backward compat
@@ -659,7 +657,6 @@ def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     
     Uses bundled Inter font for consistent cross-platform appearance.
     Falls back to system fonts if bundled fonts aren't available.
-    Applies DPI scaling on Windows for high-DPI displays.
     
     Args:
         size: Font size in points
@@ -670,9 +667,7 @@ def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     """
     # Use bundled Inter font (loaded at startup)
     font_family = get_font_sans()  # Inter if loaded, Helvetica as fallback
-    # Apply DPI scaling for Windows high-DPI displays
-    dpi_scaled_size = get_dpi_scaled_font_size(size)
-    return (font_family, dpi_scaled_size, weight)
+    return (font_family, size, weight)
 
 
 class RoundedButton(tk.Canvas):
@@ -749,7 +744,7 @@ class RoundedButton(tk.Canvas):
 
         self.create_rounded_rect(x1, y1, x2, y2, r, fill=self.bg_color, outline=self.bg_color)
 
-        font_to_use = self.font_obj or (get_font_sans(), get_dpi_scaled_font_size(14), "bold")
+        font_to_use = self.font_obj or (get_font_sans(), 14, "bold")
         self.create_text(w // 2, h // 2 + offset, text=self.text_str, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -1131,7 +1126,7 @@ class Card(tk.Canvas):
         self.tag_lower("card_bg")
         
         if self.text:
-            font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
+            font_to_use = self.font or (get_font_sans(), 12, "bold")
             fill_color = self.text_color or COLORS["text_primary"]
             self.create_text(w // 2, h // 2, text=self.text, fill=fill_color, font=font_to_use, tags="card_text")
 
@@ -1188,7 +1183,7 @@ class Badge(tk.Canvas):
 
     def _calculate_text_width(self) -> int:
         """Calculate the width needed to display the current text."""
-        font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
+        font_to_use = self.font or (get_font_sans(), 12, "bold")
         
         # Create a temporary text item to measure width
         temp_id = self.create_text(0, 0, text=self.text, font=font_to_use)
@@ -1226,7 +1221,7 @@ class Badge(tk.Canvas):
         self.create_rounded_rect(3, 4, w - 1, h - 1, self.corner_radius, fill="#D8D8DC", outline="")
         # Main badge surface
         self.create_rounded_rect(0, 0, w - 4, h - 5, self.corner_radius, fill=self.bg_color, outline="")
-        font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
+        font_to_use = self.font or (get_font_sans(), 12, "bold")
         self.create_text((w - 4) // 2, (h - 5) // 2, text=self.text, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -1460,9 +1455,8 @@ class NotificationPopup:
             pass
     
     def _get_font(self, size: int, weight: str = "normal") -> tuple:
-        """Get font tuple with fallback, with DPI scaling for Windows."""
-        dpi_scaled_size = get_dpi_scaled_font_size(size)
-        return (self._get_font_family(), dpi_scaled_size, weight)
+        """Get font tuple with fallback."""
+        return (self._get_font_family(), size, weight)
     
     def _create_ui(self):
         """Build the popup UI matching the reference design."""
@@ -2054,8 +2048,7 @@ class BrainDockGUI:
         Create custom fonts for the UI with scalable sizes.
         
         Uses bundled fonts (Inter for interface, Lora for display) for
-        consistent cross-platform appearance. Applies DPI scaling on Windows
-        to ensure fonts are readable at high DPI settings (125%, 150%, 200%, etc.).
+        consistent cross-platform appearance.
         
         Args:
             scale: Optional scale factor. If None, uses current_scale.
@@ -2067,20 +2060,11 @@ class BrainDockGUI:
         font_display = get_font_serif()   # Lora (replaces Georgia)
         font_interface = get_font_sans()  # Inter (replaces Helvetica)
         
-        # Get system DPI scale (1.0 on macOS, 1.25/1.5/2.0 etc. on Windows)
-        dpi_scale = get_system_dpi_scale()
-        
-        # Helper to get scaled font size with bounds, applying DPI scaling
+        # Helper to get scaled font size with bounds
         def get_scaled_size(font_key: str) -> int:
             base_size, min_size, max_size = FONT_BOUNDS.get(font_key, (14, 11, 18))
-            # Apply window-based scaling first
             scaled = int(base_size * scale)
-            # Apply DPI scaling for Windows high-DPI displays
-            dpi_adjusted = int(scaled * dpi_scale)
-            # Apply bounds (also scaled by DPI for consistency)
-            min_dpi = int(min_size * dpi_scale)
-            max_dpi = int(max_size * dpi_scale)
-            return max(min_dpi, min(dpi_adjusted, max_dpi))
+            return max(min_size, min(scaled, max_size))
         
         self.font_title = tkfont.Font(
             family=font_display, size=get_scaled_size("title"), weight="bold"
@@ -2952,7 +2936,7 @@ class BrainDockGUI:
         quick_sites_label = ctk.CTkLabel(
             content_frame,
             text="Quick Select",
-            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
+            font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
         quick_sites_label.pack(anchor="w", pady=(0, 10), padx=15)
@@ -2989,7 +2973,7 @@ class BrainDockGUI:
                 quick_sites_frame,
                 text=site_data["name"],
                 variable=var,
-                font=(get_font_sans(), get_dpi_scaled_font_size(16)),
+                font=(get_font_sans(), 16),
                 text_color=COLORS["text_primary"],
                 fg_color=COLORS["accent_primary"],
                 hover_color=COLORS["text_secondary"],
@@ -3002,7 +2986,7 @@ class BrainDockGUI:
         urls_label = ctk.CTkLabel(
             content_frame,
             text="Custom URLs/Domains",
-            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
+            font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
         urls_label.pack(anchor="w", pady=(25, 5), padx=15)
@@ -3047,7 +3031,7 @@ class BrainDockGUI:
         apps_label = ctk.CTkLabel(
             content_frame,
             text="Custom App Names",
-            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
+            font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
         apps_label.pack(anchor="w", pady=(5, 5), padx=15)
@@ -4562,7 +4546,7 @@ class BrainDockGUI:
         expired_label = tk.Label(
             content_frame,
             text="⏱️",
-            font=tkfont.Font(size=get_dpi_scaled_font_size(48)),
+            font=tkfont.Font(size=48),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )
@@ -6281,11 +6265,37 @@ class BrainDockGUI:
 
 def main():
     """Entry point for the GUI application."""
-    # Configure logging
-    logging.basicConfig(
-        level=getattr(logging, config.LOG_LEVEL),
-        format=config.LOG_FORMAT
-    )
+    # Configure logging - both console and file
+    log_level = getattr(logging, config.LOG_LEVEL)
+    log_format = config.LOG_FORMAT
+    
+    # Create formatter
+    formatter = logging.Formatter(log_format)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    
+    # File handler - write to user data directory for debugging
+    log_file = config.USER_DATA_DIR / "braindock.log"
+    file_handler = None
+    try:
+        config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
+        file_handler.setFormatter(formatter)
+    except Exception as e:
+        print(f"Warning: Could not create log file: {e}")
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)  # Capture all levels
+    root_logger.addHandler(console_handler)
+    if file_handler:
+        root_logger.addHandler(file_handler)
+    
+    logger.info(f"BrainDock starting, log file: {log_file}")
     
     # Suppress noisy third-party logs
     logging.getLogger("httpx").setLevel(logging.WARNING)

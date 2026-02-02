@@ -335,7 +335,7 @@ class WindowDetector:
             hwnd = user32.GetForegroundWindow()
             
             if not hwnd:
-                logger.debug("No foreground window found")
+                logger.warning("Windows: No foreground window found")
                 self._has_permission = False
                 return None
             
@@ -354,22 +354,25 @@ class WindowDetector:
             # Successfully got window info - mark permission as granted
             self._has_permission = True
             
+            # Log what we detected (INFO level for visibility)
+            logger.info(f"Windows detection: app='{app_name}', title='{window_title[:50]}...'")
+            
             # Check if it's a browser using comprehensive list
             app_name_lower = app_name.lower()
             is_browser = self._is_browser_process(app_name_lower)
             url = None
             page_title = None
             
+            logger.info(f"Windows detection: is_browser={is_browser} (app_lower='{app_name_lower}')")
+            
             if is_browser:
                 # Extract page title from window title (works for all browsers)
                 page_title = self._extract_page_title_from_window(window_title)
+                logger.info(f"Windows detection: extracted page_title='{page_title}'")
                 
                 # Try to get actual URL (requires pywinauto or UI Automation)
                 url = self._get_browser_url_windows(hwnd, app_name_lower)
-                
-                # If URL detection failed but we have a page title, log it
-                if not url and page_title:
-                    logger.debug(f"Browser detected: {app_name}, page title: '{page_title}'")
+                logger.info(f"Windows detection: url='{url}'")
             
             return WindowInfo(
                 app_name=app_name,

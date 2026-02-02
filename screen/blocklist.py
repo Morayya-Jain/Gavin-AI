@@ -323,6 +323,10 @@ class Blocklist:
         patterns = self.get_all_patterns()
         patterns_to_remove = []
         
+        # Log what we're checking (for debugging)
+        logger.info(f"Blocklist check: url={url}, page_title={page_title}, app={app_name}")
+        logger.info(f"Blocklist patterns count: {len(patterns)}, quick_sites: {self.enabled_quick_sites}")
+        
         # Prepare texts for matching (lowercase)
         url_lower = url.lower() if url else None
         window_title_lower = window_title.lower() if window_title else None

@@ -47,12 +47,38 @@ from tracking.session import Session
 from tracking.analytics import compute_statistics
 from reporting.pdf_report import generate_report
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format=config.LOG_FORMAT
-)
+# Configure logging - both console and file
+log_level = getattr(logging, config.LOG_LEVEL)
+log_format = config.LOG_FORMAT
+
+# Create formatter
+formatter = logging.Formatter(log_format)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(log_level)
+console_handler.setFormatter(formatter)
+
+# File handler - write to user data directory for debugging
+log_file = config.USER_DATA_DIR / "braindock.log"
+try:
+    config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
+    file_handler.setFormatter(formatter)
+except Exception as e:
+    file_handler = None
+    print(f"Warning: Could not create log file: {e}")
+
+# Configure root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)  # Capture all levels
+root_logger.addHandler(console_handler)
+if file_handler:
+    root_logger.addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
+logger.info(f"Log file: {log_file}")
 
 # Suppress noisy third-party library logs (HTTP requests, etc.)
 logging.getLogger("httpx").setLevel(logging.WARNING)
