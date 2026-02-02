@@ -609,7 +609,8 @@ from gui.ui_components import (
     get_screen_scale_factor,
     normalize_tk_scaling,
     setup_natural_scroll,
-    create_scrollable_frame
+    create_scrollable_frame,
+    _get_windows_work_area
 )
 
 # Base dimensions for scaling (larger default window) - keep for backward compat
@@ -1406,11 +1407,24 @@ class NotificationPopup:
             self.window.attributes('-transparent', True)
             self.window.config(bg='systemTransparent')
         
-        # Center on screen
+        # Center on screen (Windows-aware: use work area excluding taskbar)
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
-        x = (screen_width - self.popup_width) // 2
-        y = (screen_height - self.popup_height) // 2
+        
+        if sys.platform == 'win32':
+            # Try to get Windows work area for accurate centering
+            work_area = _get_windows_work_area()
+            if work_area:
+                work_left, work_top, work_width, work_height = work_area
+                x = work_left + (work_width - self.popup_width) // 2
+                y = work_top + (work_height - self.popup_height) // 2
+            else:
+                x = (screen_width - self.popup_width) // 2
+                y = (screen_height - self.popup_height) // 2
+        else:
+            x = (screen_width - self.popup_width) // 2
+            y = (screen_height - self.popup_height) // 2
+        
         self.window.geometry(f"{self.popup_width}x{self.popup_height}+{x}+{y}")
         
         # Build the UI
@@ -2845,19 +2859,35 @@ class BrainDockGUI:
         main_width = self.root.winfo_width()
         main_height = self.root.winfo_height()
         
-        popup_width = max(380, min(550, int(main_width * 0.85)))
-        popup_height = max(450, min(750, int(main_height * 0.85)))
+        # Scale popup size - use DPI-aware sizing on Windows
+        if sys.platform == 'win32':
+            dpi_scale = self.scaling_manager.get_windows_dpi_scale()
+            if dpi_scale > 1.0:
+                # Reduce base multiplier on high-DPI Windows to prevent oversized popups
+                width_mult = 0.75 / dpi_scale + 0.25  # Ranges from ~0.6 at 150% to ~0.5 at 200%
+                height_mult = width_mult
+                popup_width = max(380, min(550, int(main_width * width_mult)))
+                popup_height = max(450, min(750, int(main_height * height_mult)))
+            else:
+                popup_width = max(380, min(550, int(main_width * 0.85)))
+                popup_height = max(450, min(750, int(main_height * 0.85)))
+        else:
+            popup_width = max(380, min(550, int(main_width * 0.85)))
+            popup_height = max(450, min(750, int(main_height * 0.85)))
         
         settings_window.geometry(f"{popup_width}x{popup_height}")
         settings_window.resizable(True, True)
         settings_window.minsize(380, 450)
         
-        # Center on parent window
+        # Center on parent window (Windows-aware positioning)
         settings_window.transient(self.root)
         settings_window.grab_set()
         
-        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
+        x, y = self.scaling_manager.get_popup_centered_position(
+            popup_width, popup_height,
+            self.root.winfo_x(), self.root.winfo_y(),
+            self.root.winfo_width(), self.root.winfo_height()
+        )
         settings_window.geometry(f"+{x}+{y}")
         
         # Main container - holds scrollable area and fixed buttons
@@ -3155,11 +3185,14 @@ class BrainDockGUI:
         sites_popup.geometry(f"{popup_width}x{popup_height}")
         sites_popup.resizable(False, False)
         
-        # Center on parent
+        # Center on parent (Windows-aware positioning)
         sites_popup.transient(self.root)
         self.root.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
+        x, y = self.scaling_manager.get_popup_centered_position(
+            popup_width, popup_height,
+            self.root.winfo_x(), self.root.winfo_y(),
+            self.root.winfo_width(), self.root.winfo_height()
+        )
         sites_popup.geometry(f"+{x}+{y}")
         
         # Make modal to ensure proper event handling
@@ -4202,12 +4235,15 @@ class BrainDockGUI:
         tutorial_window.resizable(True, True)
         tutorial_window.minsize(500, 620)
         
-        # Center on parent window
+        # Center on parent window (Windows-aware positioning)
         tutorial_window.transient(self.root)
         tutorial_window.grab_set()
         
-        x = self.root.winfo_x() + (self.root.winfo_width() - window_width) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - window_height) // 2
+        x, y = self.scaling_manager.get_popup_centered_position(
+            window_width, window_height,
+            self.root.winfo_x(), self.root.winfo_y(),
+            self.root.winfo_width(), self.root.winfo_height()
+        )
         tutorial_window.geometry(f"+{x}+{y}")
         
         # Main container with padding
@@ -4660,10 +4696,14 @@ class BrainDockGUI:
         # Set window icon for Windows (each Toplevel needs this explicitly)
         self._set_toplevel_icon(dialog)
         
-        # Size and position - scale based on screen and center
+        # Size and position - scale based on screen and center on parent
         dialog_width, dialog_height = self.scaling_manager.get_popup_size(350, 200)
         dialog.update_idletasks()
-        x, y = self.scaling_manager.get_centered_position(dialog_width, dialog_height)
+        x, y = self.scaling_manager.get_popup_centered_position(
+            dialog_width, dialog_height,
+            self.root.winfo_x(), self.root.winfo_y(),
+            self.root.winfo_width(), self.root.winfo_height()
+        )
         dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         
         # Make modal
@@ -6263,89 +6303,13 @@ class BrainDockGUI:
         self.root.mainloop()
 
 
-def _setup_debug_logging():
-    """
-    Set up debug logging to a file.
-    
-    Creates a simple debug log file to help troubleshoot Windows issues.
-    Returns the log file path.
-    """
-    import sys
-    from datetime import datetime
-    
-    try:
-        # Ensure user data directory exists
-        config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-        
-        debug_file = config.USER_DATA_DIR / "debug.txt"
-        log_file = config.USER_DATA_DIR / "braindock.log"
-        
-        # Write a simple debug file to confirm we can write
-        with open(debug_file, 'a', encoding='utf-8') as f:
-            f.write(f"\n--- BrainDock started at {datetime.now()} ---\n")
-            f.write(f"Platform: {sys.platform}\n")
-            f.write(f"User data dir: {config.USER_DATA_DIR}\n")
-            f.write(f"Python: {sys.version}\n")
-        
-        return log_file, debug_file
-    except Exception as e:
-        # Try alternate location - user's home directory
-        try:
-            from pathlib import Path
-            alt_dir = Path.home() / "BrainDock_logs"
-            alt_dir.mkdir(parents=True, exist_ok=True)
-            
-            debug_file = alt_dir / "debug.txt"
-            log_file = alt_dir / "braindock.log"
-            
-            with open(debug_file, 'a', encoding='utf-8') as f:
-                f.write(f"\n--- BrainDock started at {datetime.now()} ---\n")
-                f.write(f"Original error: {e}\n")
-                f.write(f"Using alternate dir: {alt_dir}\n")
-            
-            return log_file, debug_file
-        except Exception as e2:
-            return None, None
-
-
 def main():
     """Entry point for the GUI application."""
-    # Set up debug logging first (before anything else)
-    log_file, debug_file = _setup_debug_logging()
-    
-    # Configure logging - both console and file
-    log_level = getattr(logging, config.LOG_LEVEL)
-    log_format = config.LOG_FORMAT
-    
-    # Create formatter
-    formatter = logging.Formatter(log_format)
-    
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(formatter)
-    
-    # File handler - write to user data directory for debugging
-    file_handler = None
-    if log_file:
-        try:
-            file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-            file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
-            file_handler.setFormatter(formatter)
-        except Exception as e:
-            print(f"Warning: Could not create log file handler: {e}")
-    
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG)  # Capture all levels
-    root_logger.addHandler(console_handler)
-    if file_handler:
-        root_logger.addHandler(file_handler)
-    
-    if log_file:
-        logger.info(f"BrainDock starting, log file: {log_file}")
-    if debug_file:
-        logger.info(f"Debug file: {debug_file}")
+    # Configure logging
+    logging.basicConfig(
+        level=getattr(logging, config.LOG_LEVEL),
+        format=config.LOG_FORMAT
+    )
     
     # Suppress noisy third-party logs
     logging.getLogger("httpx").setLevel(logging.WARNING)

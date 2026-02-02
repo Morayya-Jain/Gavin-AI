@@ -223,31 +223,6 @@ class Blocklist:
     # Track patterns that need to be removed (self-cleaning)
     _patterns_to_remove: List[str] = field(default_factory=list, repr=False)
     
-    def _write_debug_file(self, message: str):
-        """Write debug info to a file (fallback when logging doesn't work on Windows)."""
-        try:
-            import os
-            import sys
-            from datetime import datetime
-            
-            if sys.platform != 'win32':
-                return  # Only write debug file on Windows
-            
-            # Try AppData first, then home directory
-            appdata = os.environ.get('APPDATA')
-            if appdata:
-                debug_dir = Path(appdata) / "BrainDock"
-            else:
-                debug_dir = Path.home() / "BrainDock_logs"
-            
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            debug_file = debug_dir / "blocklist_debug.txt"
-            
-            with open(debug_file, 'a', encoding='utf-8') as f:
-                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
-        except Exception:
-            pass  # Silently ignore if debug writing fails
-    
     def __post_init__(self):
         """Initialize with default enabled categories and quick sites if empty."""
         if not self.enabled_categories:
@@ -348,13 +323,6 @@ class Blocklist:
         patterns = self.get_all_patterns()
         patterns_to_remove = []
         
-        # Log what we're checking (for debugging)
-        logger.info(f"Blocklist check: url={url}, page_title={page_title}, app={app_name}")
-        logger.info(f"Blocklist patterns count: {len(patterns)}, quick_sites: {self.enabled_quick_sites}")
-        
-        # Write debug file for Windows troubleshooting
-        self._write_debug_file(f"CHECK: url={url}, page_title={page_title}, patterns={len(patterns)}, quick_sites={self.enabled_quick_sites}")
-        
         # Prepare texts for matching (lowercase)
         url_lower = url.lower() if url else None
         window_title_lower = window_title.lower() if window_title else None
@@ -374,11 +342,9 @@ class Blocklist:
                     # "x.com" from matching "netflix.com"
                     if url_lower and self._match_domain(pattern_lower, url_lower):
                         logger.debug(f"Distraction detected: '{pattern}' matched URL '{url[:50]}'")
-                        self._write_debug_file(f"MATCH: '{pattern}' matched URL")
                         return True, pattern
                     if window_title_lower and self._match_domain(pattern_lower, window_title_lower):
                         logger.debug(f"Distraction detected: '{pattern}' matched window title")
-                        self._write_debug_file(f"MATCH: '{pattern}' matched window title")
                         return True, pattern
                     
                     # For browsers: check if domain name appears in page title
@@ -386,10 +352,8 @@ class Blocklist:
                     # e.g., "youtube.com" -> check for "youtube" in page title
                     if page_title_lower:
                         domain_name = self._extract_domain_name(pattern_lower)
-                        self._write_debug_file(f"TRYING: pattern='{pattern}', domain_name='{domain_name}', page_title_lower='{page_title_lower}'")
                         if domain_name and self._match_site_in_title(domain_name, page_title_lower):
                             logger.debug(f"Distraction detected: '{pattern}' matched page title '{page_title[:50]}'")
-                            self._write_debug_file(f"MATCH: '{pattern}' matched page title '{page_title_lower}'")
                             return True, pattern
                 else:
                     # App name matching: use simple substring match
@@ -410,7 +374,6 @@ class Blocklist:
         if patterns_to_remove:
             self._remove_invalid_patterns(patterns_to_remove)
         
-        self._write_debug_file(f"RESULT: No match found")
         return False, None
     
     def _extract_domain_name(self, domain_pattern: str) -> Optional[str]:
@@ -488,17 +451,12 @@ class Blocklist:
         if site_name in site_title_variations:
             for variation in site_title_variations[site_name]:
                 if variation in title:
-                    self._write_debug_file(f"SITE MATCH: '{variation}' found in '{title}'")
                     return True
         
         # Default: simple substring check for the site name
         # This catches cases where the site name appears in the title
         # e.g., "YouTube - Watching videos" contains "youtube"
-        if site_name in title:
-            self._write_debug_file(f"SUBSTRING MATCH: '{site_name}' found in '{title}'")
-            return True
-        
-        return False
+        return site_name in title
     
     def _match_domain(self, pattern: str, text: str) -> bool:
         """

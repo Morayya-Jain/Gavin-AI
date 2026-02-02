@@ -315,28 +315,6 @@ class WindowDetector:
             logger.debug(f"Could not get browser URL: {e}")
             return None
     
-    def _write_debug(self, message: str):
-        """Write debug info to a file (fallback when logging doesn't work)."""
-        try:
-            import os
-            from pathlib import Path
-            from datetime import datetime
-            
-            # Try AppData first, then home directory
-            appdata = os.environ.get('APPDATA')
-            if appdata:
-                debug_dir = Path(appdata) / "BrainDock"
-            else:
-                debug_dir = Path.home() / "BrainDock_logs"
-            
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            debug_file = debug_dir / "screen_debug.txt"
-            
-            with open(debug_file, 'a', encoding='utf-8') as f:
-                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
-        except Exception:
-            pass  # Silently ignore if debug writing fails
-    
     def _get_active_window_windows(self) -> Optional[WindowInfo]:
         """
         Get active window info on Windows using ctypes (standard library).
@@ -357,8 +335,7 @@ class WindowDetector:
             hwnd = user32.GetForegroundWindow()
             
             if not hwnd:
-                logger.warning("Windows: No foreground window found")
-                self._write_debug("ERROR: No foreground window found")
+                logger.debug("Windows: No foreground window found")
                 self._has_permission = False
                 return None
             
@@ -377,31 +354,16 @@ class WindowDetector:
             # Successfully got window info - mark permission as granted
             self._has_permission = True
             
-            # Log what we detected (INFO level for visibility)
-            debug_msg = f"app='{app_name}', title='{window_title[:50]}'"
-            logger.info(f"Windows detection: {debug_msg}")
-            self._write_debug(f"DETECTED: {debug_msg}")
-            
             # Check if it's a browser using comprehensive list
             app_name_lower = app_name.lower()
             is_browser = self._is_browser_process(app_name_lower)
             url = None
             page_title = None
             
-            debug_msg = f"is_browser={is_browser}, app_lower='{app_name_lower}'"
-            logger.info(f"Windows detection: {debug_msg}")
-            self._write_debug(f"BROWSER CHECK: {debug_msg}")
-            
             if is_browser:
                 # Extract page title from window title (works for all browsers)
                 page_title = self._extract_page_title_from_window(window_title)
-                self._write_debug(f"PAGE TITLE: '{page_title}'")
-                logger.info(f"Windows detection: extracted page_title='{page_title}'")
-                
-                # Skip URL detection on Windows - it's slow and unreliable
-                # Page title matching is sufficient for distraction detection
-                url = None
-                self._write_debug(f"URL: skipped (using page title)")
+                logger.debug(f"Windows browser detected: {app_name}, page_title='{page_title}'")
             
             return WindowInfo(
                 app_name=app_name,

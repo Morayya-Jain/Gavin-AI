@@ -6,9 +6,96 @@ BrainDock application, built on CustomTkinter for consistent cross-platform
 appearance.
 """
 import sys
+import logging
 from typing import Dict, Tuple, Optional, Callable
 import customtkinter as ctk
 from customtkinter import CTkFont
+
+logger = logging.getLogger(__name__)
+
+
+# --- Windows-Specific Work Area Detection ---
+
+def _get_windows_work_area() -> Optional[Tuple[int, int, int, int]]:
+    """
+    Get the Windows work area (screen minus taskbar) using ctypes.
+    
+    Returns:
+        Tuple of (left, top, width, height) or None if not on Windows/failed.
+    """
+    if sys.platform != 'win32':
+        return None
+    
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        # RECT structure for work area
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ('left', wintypes.LONG),
+                ('top', wintypes.LONG),
+                ('right', wintypes.LONG),
+                ('bottom', wintypes.LONG)
+            ]
+        
+        # SPI_GETWORKAREA = 0x0030
+        SPI_GETWORKAREA = 0x0030
+        
+        rect = RECT()
+        result = ctypes.windll.user32.SystemParametersInfoW(
+            SPI_GETWORKAREA, 0, ctypes.byref(rect), 0
+        )
+        
+        if result:
+            width = rect.right - rect.left
+            height = rect.bottom - rect.top
+            return (rect.left, rect.top, width, height)
+        
+    except Exception as e:
+        logger.debug(f"Failed to get Windows work area: {e}")
+    
+    return None
+
+
+def _get_windows_dpi_scale() -> float:
+    """
+    Get the Windows DPI scale factor for the primary monitor.
+    
+    Returns:
+        DPI scale factor (1.0 = 100%, 1.25 = 125%, etc.) or 1.0 on failure.
+    """
+    if sys.platform != 'win32':
+        return 1.0
+    
+    try:
+        import ctypes
+        
+        # Try to get DPI for the desktop window (primary monitor)
+        user32 = ctypes.windll.user32
+        
+        # GetDpiForSystem (Windows 10 1607+)
+        try:
+            dpi = user32.GetDpiForSystem()
+            return dpi / 96.0  # 96 DPI = 100% scaling
+        except AttributeError:
+            pass
+        
+        # Fallback: GetDeviceCaps with LOGPIXELSX
+        try:
+            hdc = user32.GetDC(0)
+            gdi32 = ctypes.windll.gdi32
+            LOGPIXELSX = 88
+            dpi = gdi32.GetDeviceCaps(hdc, LOGPIXELSX)
+            user32.ReleaseDC(0, hdc)
+            return dpi / 96.0
+        except Exception:
+            pass
+        
+    except Exception as e:
+        logger.debug(f"Failed to get Windows DPI scale: {e}")
+    
+    return 1.0
 
 # Import font loader for bundled fonts
 try:
@@ -79,6 +166,10 @@ class ScalingManager:
     
     Note: CustomTkinter handles DPI scaling automatically, so this class
     focuses on responsive layout scaling based on window/screen size.
+    
+    On Windows, this class accounts for:
+    - Work area (excluding taskbar) for proper centering
+    - DPI scaling for consistent element sizing
     """
     
     def __init__(self, root: ctk.CTk):
@@ -94,6 +185,10 @@ class ScalingManager:
         self._screen_height = 0
         self._fonts: Dict[str, CTkFont] = {}
         
+        # Windows-specific: work area (screen minus taskbar)
+        self._work_area: Optional[Tuple[int, int, int, int]] = None  # (left, top, width, height)
+        self._windows_dpi_scale = 1.0
+        
         # Load bundled fonts at initialization
         load_bundled_fonts()
         
@@ -104,12 +199,27 @@ class ScalingManager:
         """
         Detect the current screen dimensions for window sizing.
         
-        CustomTkinter handles DPI scaling automatically, so we just
-        get the screen dimensions directly.
+        On Windows, also gets the work area (excluding taskbar) and DPI scale.
+        On macOS, uses standard screen dimensions.
         """
         self.root.update_idletasks()
         self._screen_width = self.root.winfo_screenwidth()
         self._screen_height = self.root.winfo_screenheight()
+        
+        # Windows-specific: get work area and DPI scale
+        if sys.platform == 'win32':
+            self._work_area = _get_windows_work_area()
+            self._windows_dpi_scale = _get_windows_dpi_scale()
+            
+            # If we got a valid work area, use it for more accurate sizing
+            if self._work_area:
+                _, _, work_width, work_height = self._work_area
+                # Use work area dimensions if they're reasonable
+                if work_width > 100 and work_height > 100:
+                    logger.debug(
+                        f"Windows work area: {work_width}x{work_height}, "
+                        f"DPI scale: {self._windows_dpi_scale}"
+                    )
     
     @property
     def screen_width(self) -> int:
@@ -130,29 +240,80 @@ class ScalingManager:
         """
         Calculate the initial window size based on screen dimensions.
         
+        On Windows, uses work area (excluding taskbar) for sizing.
+        
         Returns:
             Tuple of (width, height) for the initial window size.
         """
-        # Target 75% of screen width, 80% of screen height
+        # Determine available screen space
+        if sys.platform == 'win32' and self._work_area:
+            _, _, avail_width, avail_height = self._work_area
+        else:
+            avail_width = self._screen_width
+            avail_height = self._screen_height
+        
+        # Target 75% of available width, 80% of available height
         # But cap at reference dimensions for larger screens
-        target_width = min(int(self._screen_width * 0.75), REFERENCE_WIDTH)
-        target_height = min(int(self._screen_height * 0.8), REFERENCE_HEIGHT)
+        target_width = min(int(avail_width * 0.75), REFERENCE_WIDTH)
+        target_height = min(int(avail_height * 0.8), REFERENCE_HEIGHT)
         
         # Ensure minimum size (but only if screen is large enough)
         target_width = max(target_width, MIN_WIDTH)
         target_height = max(target_height, MIN_HEIGHT)
         
-        # Final safeguard: never exceed 95% of screen to prevent overflow
-        max_width = int(self._screen_width * 0.95)
-        max_height = int(self._screen_height * 0.95)
+        # Final safeguard: never exceed 95% of available space to prevent overflow
+        max_width = int(avail_width * 0.95)
+        max_height = int(avail_height * 0.95)
         target_width = min(target_width, max_width)
         target_height = min(target_height, max_height)
         
         return target_width, target_height
     
+    def get_popup_centered_position(
+        self, 
+        popup_width: int, 
+        popup_height: int,
+        parent_x: int,
+        parent_y: int, 
+        parent_width: int, 
+        parent_height: int
+    ) -> Tuple[int, int]:
+        """
+        Calculate centered position for a popup relative to parent window.
+        
+        On Windows, ensures the popup stays within the work area bounds.
+        
+        Args:
+            popup_width: Width of the popup.
+            popup_height: Height of the popup.
+            parent_x: Parent window X position.
+            parent_y: Parent window Y position.
+            parent_width: Parent window width.
+            parent_height: Parent window height.
+        
+        Returns:
+            Tuple of (x, y) position for the popup.
+        """
+        # Calculate position centered on parent
+        x = parent_x + (parent_width - popup_width) // 2
+        y = parent_y + (parent_height - popup_height) // 2
+        
+        # Windows-specific: ensure popup stays within work area
+        if sys.platform == 'win32' and self._work_area:
+            work_left, work_top, work_width, work_height = self._work_area
+            
+            # Clamp to work area bounds
+            x = max(work_left, min(x, work_left + work_width - popup_width))
+            y = max(work_top, min(y, work_top + work_height - popup_height))
+        
+        return x, y
+    
     def get_centered_position(self, width: int, height: int) -> Tuple[int, int]:
         """
         Calculate the centered position for a window.
+        
+        On Windows, uses the work area (excluding taskbar) for accurate centering.
+        On macOS, uses standard screen dimensions.
         
         Args:
             width: Window width.
@@ -161,9 +322,21 @@ class ScalingManager:
         Returns:
             Tuple of (x, y) position to center the window.
         """
-        x = (self._screen_width - width) // 2
-        y = (self._screen_height - height) // 2
-        return x, y
+        if sys.platform == 'win32' and self._work_area:
+            # Windows: center within work area (excluding taskbar)
+            work_left, work_top, work_width, work_height = self._work_area
+            x = work_left + (work_width - width) // 2
+            y = work_top + (work_height - height) // 2
+            
+            # Ensure window stays within work area bounds
+            x = max(work_left, min(x, work_left + work_width - width))
+            y = max(work_top, min(y, work_top + work_height - height))
+            return x, y
+        else:
+            # macOS/Linux: standard centering
+            x = (self._screen_width - width) // 2
+            y = (self._screen_height - height) // 2
+            return x, y
     
     def calculate_scale(self, window_width: int, window_height: int) -> float:
         """
@@ -281,6 +454,9 @@ class ScalingManager:
         """
         Calculate popup size based on current window scale or screen dimensions.
         
+        On Windows with high DPI scaling, reduces popup sizes to prevent
+        elements appearing too large.
+        
         Args:
             base_width: Base popup width.
             base_height: Base popup height.
@@ -301,6 +477,18 @@ class ScalingManager:
             )
             popup_scale = max(popup_scale, 0.6)
         
+        # Windows-specific: compensate for DPI scaling to prevent oversized popups
+        # When Windows DPI is >100%, CustomTkinter scales everything up automatically
+        # We reduce our base sizes proportionally to maintain consistent visual size
+        if sys.platform == 'win32' and self._windows_dpi_scale > 1.0:
+            # Reduce base sizes inversely proportional to DPI scale
+            # e.g., 150% DPI -> multiply by ~0.75 to counteract the automatic scaling
+            dpi_compensation = 1.0 / self._windows_dpi_scale
+            # Apply a gentler compensation (don't fully counteract, keep some scaling)
+            # This gives a balanced result - not too large, not too small
+            gentle_compensation = 0.6 + (0.4 * dpi_compensation)
+            popup_scale *= gentle_compensation
+        
         width = int(base_width * popup_scale)
         height = int(base_height * popup_scale)
         
@@ -315,10 +503,30 @@ class ScalingManager:
         """
         Get the scale factor to use for popup fonts.
         
+        On Windows with high DPI, reduces font scale to prevent oversized text.
+        
         Returns:
             Scale factor for popup fonts (based on current window scale).
         """
-        return max(self._current_scale, 0.7)
+        base_scale = max(self._current_scale, 0.7)
+        
+        # Windows-specific: reduce font scale when DPI scaling is active
+        if sys.platform == 'win32' and self._windows_dpi_scale > 1.0:
+            # Apply gentle compensation for DPI scaling
+            dpi_compensation = 1.0 / self._windows_dpi_scale
+            gentle_compensation = 0.6 + (0.4 * dpi_compensation)
+            base_scale *= gentle_compensation
+        
+        return base_scale
+    
+    def get_windows_dpi_scale(self) -> float:
+        """
+        Get the Windows DPI scale factor.
+        
+        Returns:
+            DPI scale factor (1.0 on non-Windows platforms).
+        """
+        return self._windows_dpi_scale if sys.platform == 'win32' else 1.0
 
 
 def get_screen_scale_factor(root: ctk.CTk) -> float:
