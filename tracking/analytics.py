@@ -31,7 +31,7 @@ def format_duration(seconds: float, full_precision: bool = False) -> str:
         >>> format_duration(3725, full_precision=True)
         "1 hr 2 mins 5 secs"
         >>> format_duration(0)
-        "0 secs"
+        "0 sec"
     """
     # Truncate to int at display time only (floor, not round)
     total_seconds = int(seconds) if seconds >= 0 else 0
@@ -58,7 +58,7 @@ def format_duration(seconds: float, full_precision: bool = False) -> str:
             sec_unit = "sec" if secs == 1 else "secs"
             parts.append(f"{secs} {sec_unit}")
     
-    return " ".join(parts) if parts else "0 secs"
+    return " ".join(parts) if parts else "0 sec"
 
 
 def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> Dict[str, Any]:

@@ -10,6 +10,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import logging
+import re
 import sys
 import socket
 import time
@@ -50,10 +51,15 @@ class LocalPaymentServer:
     Temporary local HTTP server to handle Stripe redirect after payment.
     
     Serves a success page and notifies the app when payment redirect is received.
+    Uses 127.0.0.1 instead of localhost for more reliable cross-platform compatibility.
     """
     
     # Default port to try first
     DEFAULT_PORT = 5678
+    # Fallback ports to try if default is unavailable
+    FALLBACK_PORTS = [5679, 5680, 8765, 8766, 9876, 9877]
+    # Use IP address instead of hostname for reliable Windows compatibility
+    HOST = '127.0.0.1'
     
     def __init__(self, callback: Callable[[str], None]):
         """
@@ -73,32 +79,49 @@ class LocalPaymentServer:
         """
         Find an available port for the server.
         
+        Tries default port first, then fallbacks, then OS-assigned.
+        
         Returns:
             An available port number.
         """
+        # Try default port first
         if self._is_port_available(self.DEFAULT_PORT):
             return self.DEFAULT_PORT
         
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('localhost', 0))
-            return s.getsockname()[1]
-    
-    def _is_port_available(self, port: int) -> bool:
-        """Check if a port is available."""
+        # Try fallback ports
+        for port in self.FALLBACK_PORTS:
+            if self._is_port_available(port):
+                return port
+        
+        # Last resort: let OS assign a port
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind((self.HOST, 0))
+                return s.getsockname()[1]
+        except OSError as e:
+            logger.warning(f"Could not get OS-assigned port: {e}")
+            # Return default and hope for the best
+            return self.DEFAULT_PORT
+    
+    def _is_port_available(self, port: int) -> bool:
+        """Check if a port is available on the host IP."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Set SO_REUSEADDR to avoid "address already in use" on quick restarts
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((self.HOST, port))
                 return True
         except OSError:
             return False
     
     def get_success_url(self) -> str:
         """Get the URL to use as Stripe's success_url."""
-        return f"http://localhost:{self.port}/success"
+        # Use 127.0.0.1 for reliable cross-platform compatibility
+        return f"http://{self.HOST}:{self.port}/success"
     
     def get_cancel_url(self) -> str:
         """Get the URL to use as Stripe's cancel_url."""
-        return f"http://localhost:{self.port}/cancel"
+        return f"http://{self.HOST}:{self.port}/cancel"
     
     def start(self) -> bool:
         """
@@ -116,6 +139,9 @@ class LocalPaymentServer:
             class PaymentHandler(BaseHTTPRequestHandler):
                 """Handler for payment redirect requests."""
                 
+                # Increase timeout for slow connections
+                timeout = 30
+                
                 def log_message(self, format, *args):
                     """Suppress default logging."""
                     pass
@@ -129,7 +155,8 @@ class LocalPaymentServer:
                         session_id = query_params.get('session_id', [None])[0]
                         
                         self.send_response(200)
-                        self.send_header('Content-type', 'text/html')
+                        self.send_header('Content-type', 'text/html; charset=utf-8')
+                        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                         self.end_headers()
                         
                         html = self._get_success_html()
@@ -146,11 +173,19 @@ class LocalPaymentServer:
                     
                     elif parsed_path.path == '/cancel':
                         self.send_response(200)
-                        self.send_header('Content-type', 'text/html')
+                        self.send_header('Content-type', 'text/html; charset=utf-8')
+                        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
                         self.end_headers()
                         
                         html = self._get_cancel_html()
                         self.wfile.write(html.encode('utf-8'))
+                    
+                    elif parsed_path.path == '/health':
+                        # Health check endpoint for debugging
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(b'OK')
                     
                     else:
                         self.send_response(404)
@@ -231,19 +266,34 @@ class LocalPaymentServer:
 </body>
 </html>"""
             
-            self.server = HTTPServer(('localhost', self.port), PaymentHandler)
-            self.server.timeout = 1
+            # Create server with explicit address binding
+            self.server = HTTPServer((self.HOST, self.port), PaymentHandler)
+            self.server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server.timeout = 2  # Slightly longer timeout for reliability
             self._running = True
             
             def serve():
                 """Server loop that can be stopped."""
                 while self._running:
-                    self.server.handle_request()
+                    try:
+                        self.server.handle_request()
+                    except Exception as e:
+                        if self._running:  # Only log if we didn't intentionally stop
+                            logger.warning(f"Server handle_request error: {e}")
             
             self._server_thread = threading.Thread(target=serve, daemon=True)
             self._server_thread.start()
             
-            logger.info(f"Local payment server started on port {self.port}")
+            # Verify server is actually listening by attempting a quick connection
+            try:
+                test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                test_sock.settimeout(1)
+                test_sock.connect((self.HOST, self.port))
+                test_sock.close()
+                logger.info(f"Local payment server started and verified on {self.HOST}:{self.port}")
+            except Exception as e:
+                logger.warning(f"Server started but connection test failed: {e}")
+            
             return True
             
         except Exception as e:
@@ -297,7 +347,15 @@ class PaymentScreen:
         # Initialize scaling manager for responsive UI
         self.scaling_manager = ScalingManager(self.root)
         
-        # Calculate scale factor based on screen dimensions
+        # Card sizing constants - FIXED aspect ratio (width:height = 550:395 ≈ 1.39:1)
+        # These must be defined before _calculate_scale() which uses them
+        self._card_aspect_ratio = 550 / 395
+        self._card_max_width = 550
+        self._card_max_height = 395
+        self._card_min_width = 380
+        self._card_min_height = int(380 / self._card_aspect_ratio)  # ~273
+        
+        # Calculate scale factor based on expected card size
         self._calculate_scale()
         
         # Pending session for verification
@@ -333,17 +391,12 @@ class PaymentScreen:
         self.card_bg: Optional[ctk.CTkFrame] = None
         self.center_container: Optional[ctk.CTkFrame] = None
         
-        # Card sizing constants (aspect ratio ~1.39:1)
-        self._card_aspect_ratio = 550 / 395
-        # Keep max close to original design - don't let it grow excessively
-        self._card_max_width = 550
-        self._card_max_height = 395
+        # Card resize tracking
         self._last_card_size: Optional[tuple] = None
-        self._content_min_size: Optional[tuple] = None
         
         self._setup_ui()
         
-        # Bind resize handler after UI setup (delay to get accurate content size)
+        # Bind resize handler after UI setup
         self.root.after(100, self._initialize_responsive_card)
         
         # Bind focus events to detect when user returns to app
@@ -357,15 +410,44 @@ class PaymentScreen:
             self.session_entry.clear_error()
     
     def _calculate_scale(self):
-        """Calculate the scale factor based on screen dimensions."""
-        self.screen_scale = min(
-            self.scaling_manager.screen_width / 1920,
-            self.scaling_manager.screen_height / 1080,
-            1.0
-        )
-        # Platform-specific minimum scale
-        # Windows: Use higher minimum to prevent squished layouts (CTk handles DPI)
-        # macOS: Lower minimum is fine since we disabled DPI awareness
+        """
+        Calculate the scale factor based on expected card size.
+        
+        Content scale is derived from how much the card shrinks from its
+        maximum size, ensuring inner elements scale proportionally to prevent
+        clipping on smaller screens.
+        """
+        # Get window dimensions (may not be realized yet, use screen as fallback)
+        window_width = self.root.winfo_width()
+        window_height = self.root.winfo_height()
+        
+        if window_width < 100 or window_height < 100:
+            # Window not yet realized, estimate from screen size
+            window_width = int(self.scaling_manager.screen_width * 0.4)
+            window_height = int(self.scaling_manager.screen_height * 0.5)
+        
+        # Calculate available space for card
+        available_width = window_width - 80   # Horizontal margins
+        available_height = window_height - 160  # Logo + vertical margins
+        
+        # Determine card width that fits while maintaining aspect ratio
+        # Try fitting by width first
+        card_width_by_width = available_width
+        card_height_by_width = card_width_by_width / self._card_aspect_ratio
+        
+        # If height doesn't fit, constrain by height instead
+        if card_height_by_width > available_height:
+            card_width = available_height * self._card_aspect_ratio
+        else:
+            card_width = card_width_by_width
+        
+        # Clamp to min/max bounds
+        card_width = max(self._card_min_width, min(card_width, self._card_max_width))
+        
+        # Scale content based on card size relative to maximum
+        self.screen_scale = card_width / self._card_max_width
+        
+        # Platform-specific minimum scale to ensure readability
         if sys.platform == "darwin":
             self.screen_scale = max(self.screen_scale, 0.65)
         else:
@@ -385,27 +467,18 @@ class PaymentScreen:
     
     def _initialize_responsive_card(self):
         """
-        Initialize responsive card sizing after content is laid out.
+        Initialize responsive card sizing with fixed aspect ratio.
         
-        Captures the content-determined minimum size and sets up resize handling.
+        Sets up the card to maintain a consistent width:height ratio
+        regardless of window size.
         """
         if not self.card_bg:
             return
         
-        # Force geometry update to get accurate content size
+        # Force geometry update
         self.root.update_idletasks()
         
-        # Capture the natural content size as minimum
-        content_width = self.card_bg.winfo_reqwidth()
-        content_height = self.card_bg.winfo_reqheight()
-        
-        # Ensure minimum meets content needs with small buffer
-        self._content_min_size = (
-            max(content_width, 380),
-            max(content_height, 300)
-        )
-        
-        # Now enable fixed sizing for responsive behavior
+        # Enable fixed sizing for responsive behavior
         self.card_bg.pack_propagate(False)
         
         # Calculate and apply initial size based on current window
@@ -416,46 +489,50 @@ class PaymentScreen:
     
     def _calculate_card_size(self) -> tuple:
         """
-        Calculate optimal card size based on window dimensions.
+        Calculate card size maintaining a fixed aspect ratio.
         
-        The card grows conservatively - just enough to fit content comfortably,
-        with modest scaling on larger screens (up to 10% extra breathing room).
+        The card always maintains the same width:height ratio (550:395 ≈ 1.39:1)
+        regardless of window dimensions. It scales between minimum and maximum
+        bounds while preserving this ratio.
         
         Returns:
-            Tuple of (width, height) for the card.
+            Tuple of (width, height) with consistent aspect ratio.
         """
-        # Get minimum from content (or fallback)
-        min_width, min_height = self._content_min_size or (380, 300)
-        
         # Get current window size
         window_width = self.root.winfo_width()
         window_height = self.root.winfo_height()
         
         # Fallback if window not yet sized
         if window_width < 100 or window_height < 100:
-            window_width = self.scaling_manager.screen_width * 0.4
-            window_height = self.scaling_manager.screen_height * 0.5
+            window_width = int(self.scaling_manager.screen_width * 0.4)
+            window_height = int(self.scaling_manager.screen_height * 0.5)
         
-        # Calculate how much extra space is available beyond content needs
-        # Card should only grow modestly (up to 10% extra) on larger screens
-        available_width = window_width - 80  # Margins
-        available_height = window_height - 160  # Logo + margins
+        # Available space for card (accounting for margins and logo)
+        available_width = window_width - 80    # Horizontal margins
+        available_height = window_height - 160  # Logo + vertical margins
         
-        # Start with content size and add modest breathing room based on available space
-        # Scale factor: 1.0 at minimum window size, up to 1.10 at large window sizes
-        width_ratio = min(available_width / min_width, 1.5) if min_width > 0 else 1.0
-        height_ratio = min(available_height / min_height, 1.5) if min_height > 0 else 1.0
+        # Calculate the largest card that fits while maintaining aspect ratio
+        # Try fitting by width
+        card_width_by_width = available_width
+        card_height_by_width = card_width_by_width / self._card_aspect_ratio
         
-        # Use the smaller ratio to maintain aspect ratio, capped at 10% growth
-        scale_factor = min(width_ratio, height_ratio, 1.10)
-        scale_factor = max(scale_factor, 1.0)  # Never shrink below content size
+        # If that height exceeds available space, constrain by height instead
+        if card_height_by_width > available_height:
+            card_height = available_height
+            card_width = card_height * self._card_aspect_ratio
+        else:
+            card_width = card_width_by_width
+            card_height = card_height_by_width
         
-        card_width = min_width * scale_factor
-        card_height = min_height * scale_factor
+        # Clamp to maximum bounds (card doesn't grow beyond max)
+        if card_width > self._card_max_width:
+            card_width = self._card_max_width
+            card_height = self._card_max_height
         
-        # Clamp to min/max bounds
-        card_width = max(min_width, min(card_width, self._card_max_width))
-        card_height = max(min_height, min(card_height, self._card_max_height))
+        # Clamp to minimum bounds (maintains ratio at minimum too)
+        if card_width < self._card_min_width:
+            card_width = self._card_min_width
+            card_height = self._card_min_height
         
         return int(card_width), int(card_height)
     
@@ -988,9 +1065,118 @@ class PaymentScreen:
             self._start_payment_polling(session_id)
             
             if error:
-                self._update_status(error, is_error=True)
+                # Check if browser failed to open (contains URL to copy)
+                if "Could not open browser" in error and "http" in error:
+                    self._show_url_copy_dialog(error)
+                else:
+                    self._update_status(error, is_error=True)
             else:
                 self._update_status("Complete payment in browser.", persistent=True)
+    
+    def _show_url_copy_dialog(self, error_message: str):
+        """
+        Show a dialog when browser fails to open, allowing user to copy the URL.
+        
+        Args:
+            error_message: The error message containing the URL.
+        """
+        # Extract URL from error message
+        url_match = re.search(r'(https?://[^\s]+)', error_message)
+        checkout_url = url_match.group(1) if url_match else None
+        
+        if not checkout_url:
+            self._update_status("Browser failed to open", is_error=True)
+            return
+        
+        # Create a simple dialog
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Open Payment Link")
+        dialog.geometry("500x220")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 500) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 220) // 2
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Configure dialog appearance
+        dialog.configure(fg_color=COLORS["surface"])
+        
+        # Message
+        msg_label = ctk.CTkLabel(
+            dialog,
+            text="Could not open browser automatically.\nPlease copy this link and paste it in your browser:",
+            font=get_ctk_font("body", self.screen_scale),
+            text_color=COLORS["text_primary"],
+            fg_color="transparent",
+            justify="center"
+        )
+        msg_label.pack(pady=(20, 15))
+        
+        # URL display (selectable entry)
+        url_frame = ctk.CTkFrame(dialog, fg_color=COLORS["bg"], corner_radius=8)
+        url_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        url_entry = ctk.CTkEntry(
+            url_frame,
+            font=get_ctk_font("small", self.screen_scale),
+            text_color=COLORS["text_primary"],
+            fg_color="transparent",
+            border_width=0,
+            height=36
+        )
+        url_entry.pack(fill="x", padx=10, pady=8)
+        url_entry.insert(0, checkout_url)
+        url_entry.configure(state="readonly")
+        
+        # Button frame
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        def copy_url():
+            """Copy URL to clipboard."""
+            try:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(checkout_url)
+                self.root.update()  # Required for clipboard to work
+                copy_btn.configure(text="Copied!")
+                dialog.after(1500, lambda: copy_btn.configure(text="Copy Link"))
+            except Exception as e:
+                logger.warning(f"Failed to copy to clipboard: {e}")
+        
+        def close_dialog():
+            """Close the dialog."""
+            dialog.destroy()
+            self._update_status("Paste link in browser to pay.", persistent=True)
+        
+        copy_btn = RoundedButton(
+            btn_frame,
+            text="Copy Link",
+            width=120,
+            height=40,
+            bg_color=COLORS["button_bg"],
+            hover_color=COLORS["button_bg_hover"],
+            font=get_ctk_font("button", self.screen_scale),
+            command=copy_url
+        )
+        copy_btn.pack(side="left", expand=True)
+        
+        close_btn = RoundedButton(
+            btn_frame,
+            text="Close",
+            width=120,
+            height=40,
+            bg_color=COLORS["border"],
+            hover_color=COLORS["text_secondary"],
+            font=get_ctk_font("button", self.screen_scale),
+            command=close_dialog
+        )
+        close_btn.pack(side="right", expand=True)
+        
+        # Update status to inform user
+        self._update_status("Copy payment link from dialog.", persistent=True)
     
     def _on_verify_payment(self):
         """Handle verify payment button click."""

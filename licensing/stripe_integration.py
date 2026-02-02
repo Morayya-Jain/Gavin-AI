@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import traceback
 import webbrowser
 from typing import Optional, Dict, Any, Tuple
@@ -642,29 +643,54 @@ class StripeIntegration:
                 errors.append(f"/usr/bin/open error: {e}")
                 logger.warning(f"/usr/bin/open error: {e}")
         
-        # Method 3: Windows - Multiple fallback approaches
+        # Method 3: Windows - Multiple fallback approaches (order optimized for reliability)
         if sys.platform.startswith("win"):
-            # Method 3a: os.startfile (most common)
+            # Method 3a: Use rundll32 with url.dll (most reliable for URLs on Windows)
+            try:
+                result = subprocess.run(
+                    ['rundll32', 'url.dll,FileProtocolHandler', checkout_url],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    shell=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
+                # rundll32 often returns 0 even on failure, so we can't rely on return code
+                # Give it a moment and consider it successful if no exception
+                time.sleep(0.5)
+                logger.info("Opened URL via rundll32 url.dll")
+                return None
+            except Exception as e:
+                errors.append(f"rundll32 error: {e}")
+                logger.warning(f"rundll32 error: {e}")
+            
+            # Method 3b: os.startfile (common but can fail silently on some configs)
             try:
                 os.startfile(checkout_url)  # type: ignore[attr-defined]
+                time.sleep(0.3)
                 logger.info("Opened URL via os.startfile")
                 return None
+            except OSError as e:
+                # os.startfile raises OSError on failure
+                errors.append(f"Windows startfile error: {e}")
+                logger.warning(f"Windows startfile error: {e}")
             except Exception as e:
                 errors.append(f"Windows startfile error: {e}")
                 logger.warning(f"Windows startfile error: {e}")
             
-            # Method 3b: Use 'start' command via cmd.exe
+            # Method 3c: Use 'start' command via cmd.exe with proper escaping
             try:
-                # 'start' command opens URL in default browser
+                # Use shell=True for better URL handling on Windows
+                # The empty string after 'start' is the window title (required for URLs with &)
                 result = subprocess.run(
-                    ['cmd', '/c', 'start', '', checkout_url],
+                    f'start "" "{checkout_url}"',
                     capture_output=True,
                     text=True,
-                    timeout=10,
-                    shell=False
+                    timeout=15,
+                    shell=True
                 )
                 if result.returncode == 0:
-                    logger.info("Opened URL via cmd start")
+                    logger.info("Opened URL via cmd start (shell)")
                     return None
                 else:
                     errors.append(f"cmd start failed: {result.stderr}")
@@ -673,14 +699,17 @@ class StripeIntegration:
                 errors.append(f"cmd start error: {e}")
                 logger.warning(f"cmd start error: {e}")
             
-            # Method 3c: Use PowerShell Start-Process
+            # Method 3d: Use PowerShell Start-Process with proper escaping
             try:
+                # Escape URL for PowerShell (replace single quotes)
+                ps_safe_url = checkout_url.replace("'", "''")
                 result = subprocess.run(
-                    ['powershell', '-Command', f'Start-Process "{checkout_url}"'],
+                    ['powershell', '-NoProfile', '-Command', f"Start-Process '{ps_safe_url}'"],
                     capture_output=True,
                     text=True,
-                    timeout=10,
-                    shell=False
+                    timeout=15,
+                    shell=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
                 )
                 if result.returncode == 0:
                     logger.info("Opened URL via PowerShell")
@@ -691,6 +720,30 @@ class StripeIntegration:
             except Exception as e:
                 errors.append(f"PowerShell error: {e}")
                 logger.warning(f"PowerShell error: {e}")
+            
+            # Method 3e: Try to find and launch browser directly
+            try:
+                browser_paths = [
+                    os.path.expandvars(r'%ProgramFiles%\Google\Chrome\Application\chrome.exe'),
+                    os.path.expandvars(r'%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe'),
+                    os.path.expandvars(r'%LocalAppData%\Google\Chrome\Application\chrome.exe'),
+                    os.path.expandvars(r'%ProgramFiles%\Mozilla Firefox\firefox.exe'),
+                    os.path.expandvars(r'%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe'),
+                    os.path.expandvars(r'%ProgramFiles%\Microsoft\Edge\Application\msedge.exe'),
+                    os.path.expandvars(r'%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe'),
+                ]
+                for browser_path in browser_paths:
+                    if os.path.exists(browser_path):
+                        subprocess.Popen(
+                            [browser_path, checkout_url],
+                            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                        )
+                        logger.info(f"Opened URL via direct browser: {browser_path}")
+                        return None
+                errors.append("No browser found at common paths")
+            except Exception as e:
+                errors.append(f"Direct browser launch error: {e}")
+                logger.warning(f"Direct browser launch error: {e}")
         
         # Method 4: Linux
         if sys.platform.startswith("linux"):
@@ -705,13 +758,26 @@ class StripeIntegration:
                         errors.append(f"{cmd} error: {e}")
                         logger.warning(f"{cmd} error: {e}")
         
-        # Method 5: Python webbrowser module (last resort)
+        # Method 5: Python webbrowser module (last resort - cross-platform)
         try:
-            opened = webbrowser.open(checkout_url, new=2)
-            if opened:
-                logger.info("Opened URL via webbrowser module")
-                return None
-            errors.append("webbrowser.open returned False")
+            # Try to get a specific browser instance for more reliable opening
+            for browser_name in ['windows-default', 'chrome', 'firefox', 'edge', None]:
+                try:
+                    if browser_name:
+                        browser = webbrowser.get(browser_name)
+                        opened = browser.open(checkout_url, new=2)
+                    else:
+                        opened = webbrowser.open(checkout_url, new=2)
+                    
+                    if opened:
+                        logger.info(f"Opened URL via webbrowser module (browser={browser_name})")
+                        return None
+                except webbrowser.Error:
+                    continue
+                except Exception:
+                    continue
+            
+            errors.append("webbrowser module: no working browser found")
         except Exception as e:
             errors.append(f"webbrowser error: {e}")
             logger.warning(f"webbrowser error: {e}")

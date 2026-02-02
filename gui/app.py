@@ -297,16 +297,16 @@ def format_badge_time(seconds: int) -> str:
     """
     Format seconds for the time remaining badge in top right corner.
     
-    Uses readable abbreviations with proper spacing: "2 hrs", "1 hr 30 mins", "30 mins", "45 secs".
+    Uses readable abbreviations with proper spacing: "2 hrs", "1 hr 30 mins", "30 mins", "45 secs", "0 sec".
     
     Args:
         seconds: Number of seconds to format.
         
     Returns:
-        Formatted string like "2 hrs", "1 hr 30 mins", "30 mins", "45 secs".
+        Formatted string like "2 hrs", "1 hr 30 mins", "30 mins", "45 secs", "0 sec".
     """
     if seconds <= 0:
-        return "0 secs"
+        return "0 sec"
     
     hours = seconds // 3600
     remaining = seconds % 3600
@@ -347,8 +347,8 @@ def format_stat_time(seconds: float) -> str:
     total_secs = int(seconds)
     
     if total_secs < 60:
-        # Less than a minute - show seconds
-        sec_unit = "sec" if total_secs == 1 else "secs"
+        # Less than a minute - show seconds (0 and 1 are singular)
+        sec_unit = "sec" if total_secs <= 1 else "secs"
         return f"{total_secs} {sec_unit}"
     
     total_mins = total_secs // 60
@@ -2022,11 +2022,11 @@ class BrainDockGUI:
                     
                     # Get title and value based on card type
                     if card_type == "focus":
-                        title = "Today's Focus"
+                        title = "Daily Focus"
                     elif card_type == "distractions":
-                        title = "Today's Distractions"
+                        title = "Daily Distractions"
                     else:
-                        title = "Today's Focus Rate"
+                        title = "Daily Focus Rate"
                     
                     # Title
                     card.create_text(
@@ -2277,17 +2277,17 @@ class BrainDockGUI:
         self.stat_cards[card_type] = {"card": card, "wrapper": wrapper}
         
         if card_type == "focus":
-            title = "Today's Focus"
+            title = "Daily Focus"
             main_val = format_stat_time(0)
             sub_label = "Focused"
             sub_val = format_stat_time(0)
         elif card_type == "distractions":
-            title = "Today's Distractions"
+            title = "Daily Distractions"
             main_val = format_stat_time(0)
             sub_label = "Total"
             sub_val = format_stat_time(0)
         else:  # rate
-            title = "Today's Focus Rate"
+            title = "Daily Focus Rate"
             main_val = "0%"
             sub_label = ""
             sub_val = ""
@@ -5716,6 +5716,9 @@ class BrainDockGUI:
         """
         Open a file with the system's default application.
         
+        For PDFs on Windows, tries Microsoft Edge first (built into Windows 10/11)
+        to avoid PDFs opening in Word when no PDF viewer is installed.
+        
         Args:
             filepath: Path to the file to open
         """
@@ -5723,6 +5726,20 @@ class BrainDockGUI:
             if sys.platform == "darwin":  # macOS
                 subprocess.run(["open", str(filepath)], check=True)
             elif sys.platform == "win32":  # Windows
+                # For PDF files, try Microsoft Edge first (built into Windows 10/11)
+                # This prevents PDFs from opening in Word when no PDF viewer is installed
+                if str(filepath).lower().endswith('.pdf'):
+                    try:
+                        # Try opening with Microsoft Edge (built-in PDF viewer)
+                        subprocess.run(
+                            ["cmd", "/c", "start", "msedge", str(filepath)],
+                            check=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                        return
+                    except Exception as edge_error:
+                        logger.debug(f"Could not open with Edge, falling back to default: {edge_error}")
+                # Fall back to system default for non-PDFs or if Edge fails
                 os.startfile(str(filepath))
             else:  # Linux
                 subprocess.run(["xdg-open", str(filepath)], check=True)
