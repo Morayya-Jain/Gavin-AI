@@ -1870,6 +1870,12 @@ class BrainDockGUI:
         self._screen_state: Optional[Dict] = None  # Latest screen detection result
         self._state_lock = threading.Lock()  # Thread-safe access to detection states
         
+        # Hybrid temporal filtering for gadget detection
+        # High confidence (>0.75): immediate alert
+        # Borderline (0.5-0.75): require 2 consecutive detections
+        self._consecutive_borderline_count: int = 0  # Count of consecutive borderline detections
+        self._last_gadget_confidence: float = 0.0  # Last detection confidence for debugging
+        
         # Create UI elements
         self._create_fonts()
         self._create_widgets()
@@ -5052,6 +5058,10 @@ class BrainDockGUI:
             self._camera_state = None
             self._screen_state = None
         
+        # Reset hybrid temporal filtering state
+        self._consecutive_borderline_count = 0
+        self._last_gadget_confidence = 0.0
+        
         # Reset stat cards to zero values (clear any stale data from previous session)
         self._reset_stat_cards()
         
@@ -5264,6 +5274,38 @@ class BrainDockGUI:
                             self.session_start_time = self.session.start_time
                             self.session_started = True
                             logger.info("First detection complete - session timer started")
+                        
+                        # Apply hybrid temporal filtering for gadget detection
+                        # High confidence (>0.75): immediate alert
+                        # Borderline (0.5-0.75): require 2 consecutive detections
+                        gadget_confidence = detection_state.get("gadget_confidence", 0.0)
+                        raw_gadget_suspected = detection_state.get("gadget_suspected", False)
+                        
+                        if raw_gadget_suspected:
+                            if gadget_confidence > 0.75:
+                                # High confidence - immediate detection, reset counter
+                                self._consecutive_borderline_count = 0
+                                self._last_gadget_confidence = gadget_confidence
+                                logger.debug(f"High confidence gadget detection: {gadget_confidence:.2f}")
+                            else:
+                                # Borderline confidence (0.5-0.75) - require consecutive detections
+                                self._consecutive_borderline_count += 1
+                                self._last_gadget_confidence = gadget_confidence
+                                
+                                if self._consecutive_borderline_count >= 2:
+                                    # Confirmed after 2 consecutive borderline detections
+                                    logger.debug(f"Borderline gadget confirmed after {self._consecutive_borderline_count} consecutive detections")
+                                else:
+                                    # Not yet confirmed - suppress this detection
+                                    detection_state = dict(detection_state)  # Make a copy
+                                    detection_state["gadget_suspected"] = False
+                                    logger.debug(f"Borderline gadget ({gadget_confidence:.2f}) - waiting for confirmation ({self._consecutive_borderline_count}/2)")
+                        else:
+                            # No gadget detected - reset consecutive counter
+                            if self._consecutive_borderline_count > 0:
+                                logger.debug("No gadget detected - resetting borderline counter")
+                            self._consecutive_borderline_count = 0
+                            self._last_gadget_confidence = 0.0
                         
                         # Store camera detection state for priority resolution
                         with self._state_lock:

@@ -100,57 +100,68 @@ class VisionDetector:
         return """You are a focus tracking AI analyzing webcam frames. Respond with ONLY valid JSON.
 
 RESPONSE FORMAT (no other text):
-{"person_present": true/false, "at_desk": true/false, "gadget_visible": true/false, "gadget_confidence": 0.0-1.0, "distraction_type": "phone"/"tablet"/"controller"/"tv"/"none"}
+{"person_present": true/false, "at_desk": true/false, "gadget_visible": true/false, "gadget_confidence": 0.0-1.0, "distraction_type": "phone"/"tablet"/"controller"/"tv"/"wearable"/"none"}
 
 PRESENCE DETECTION (person_present):
 - TRUE: Any human body part visible (face, torso, arms, hands, etc.)
 - FALSE: No human visible at all (empty room, only furniture)
 
-DESK PROXIMITY (at_desk) - DISTANCE-BASED, NOT FACE-DEPENDENT:
-- TRUE: Body parts appear in frame at reasonable working distance
-  Person sitting at desk, even if leaning back slightly, looking down, or face out of frame
-  Be LENIENT - if person is clearly at their desk area, mark as at_desk=true
-- FALSE: Person appears VERY small/distant (clearly in background, far across room)
-  Only mark FALSE if person is obviously far away (tiny silhouette, walking in far background)
+DESK PROXIMITY (at_desk) - LENIENT, DISTANCE-BASED:
+- TRUE: Person is at or near their desk/work area (sitting, leaning back, standing briefly)
+- FALSE: Person appears small/distant (in background, across room)
+When in doubt, lean toward at_desk=true.
 
-Face orientation does NOT matter - looking down, sideways, or face out of frame is OK.
-When in doubt, mark at_desk=true if person seems to be in their desk area.
+=== CRITICAL: SMARTWATCH/WEARABLE EXCLUSION ===
+NEVER flag smartwatches or wearables as distractions!
 
-GADGET DETECTION - VERY STRICT to minimize false positives:
+Visual identification of WEARABLES (NOT distractions):
+- Small device (1-2 inches) worn ON THE WRIST, attached to arm with a band
+- Round or square face, similar size to a traditional watch
+- Apple Watch, Fitbit, Galaxy Watch, any fitness tracker
+- If device is ON THE WRIST/ARM = it's a wearable, NOT a phone
 
-MANDATORY REQUIREMENT FOR PHONES/TABLETS:
-The screen MUST be visibly LIT/GLOWING to count as in use!
-A dark/black/off screen = NOT in use, even if held in hands.
+If you see a wrist-worn device: distraction_type="wearable", gadget_visible=false
 
-DETECT AS GADGET (gadget_visible=true) ONLY WHEN:
-1. Phone/tablet: Screen is VISIBLY LIT (glowing, showing content) AND held in hands
-2. Game controller: Actively being gripped in gaming position
-3. Phone on table: Screen VISIBLY LIT AND user clearly staring at it
+=== PHONE/TABLET IDENTIFICATION ===
+Visual identification of PHONES (5-7 inch rectangular devices):
+- Held in ONE or BOTH HANDS, not attached to body
+- Larger than a watch, smaller than a tablet
+- Typically held in portrait or landscape orientation
 
-DO NOT DETECT (gadget_visible=false) - BE STRICT:
-- Phone with dark/black/off screen (even if in hands)
-- Phone screen facing away from camera (can't confirm it's on)
-- Person looking down with no visible lit screen
-- Hands near phone on table (near ≠ using)
-- Phone lying flat on table (regardless of screen state)
-- Any rectangular object that MIGHT be a phone but unclear
+Visual identification of TABLETS (8+ inch devices):
+- Large rectangular screen held in hands or propped up
+- iPad, Android tablet, e-reader
+
+GADGET DETECTION RULES:
+
+PHONE/TABLET IN HANDS = DISTRACTION:
+- Device held in hands (not on wrist) = gadget_visible=true
+- Screen state doesn't matter (on/off/dark)
+- Gaze direction doesn't matter
+
+PHONE/TABLET ON TABLE = Only if actively viewing:
+- Screen visibly lit AND user clearly looking at it
+
+DETECT (gadget_visible=true, confidence >= 0.8):
+1. Phone held in hands (5-7 inch device, not wrist-worn)
+2. Tablet held in hands (8+ inch device)
+3. Game controller being gripped
+
+DETECT with lower confidence (0.6-0.7):
+- Phone on table with lit screen AND user staring at it
+
+DO NOT DETECT (gadget_visible=false):
+- Wrist-worn devices (watches, fitness trackers) - use distraction_type="wearable"
+- Phone lying on table (not in hands)
+- Phone on table with screen off
 - Device face-down
-- Smartwatch/Apple Watch (never a distraction)
 - Person working on computer/laptop
-- ANY uncertainty - when in doubt, do NOT detect
-
-KEY: You must see a GLOWING/LIT screen to confirm phone/tablet usage.
-Dark screens, unclear objects, or uncertain situations = gadget_visible=false
-
-CONFIDENCE:
-- Lit screen clearly visible in hands → confidence >= 0.7
-- Lit screen on table, user staring at it → confidence >= 0.6
-- Screen not clearly lit or any doubt → confidence below 0.3
+- Unclear objects (when in doubt, don't detect)
 
 RULES:
 - If person_present=false, then at_desk=false
-- Default to gadget_visible=false unless you are CERTAIN
-- False negatives are acceptable, false positives are NOT"""
+- Wrist-worn device = NEVER a distraction (wearable type)
+- Phone in hands = distraction (not wrist = not a watch)"""
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
@@ -329,7 +340,7 @@ RULES:
         # Gadget detected if visible AND confidence > threshold
         return result["gadget_visible"] and result["gadget_confidence"] > 0.5
     
-    def get_detection_state(self, frame: np.ndarray) -> Dict[str, bool]:
+    def get_detection_state(self, frame: np.ndarray) -> Dict[str, Any]:
         """
         Get complete detection state for a frame.
         
@@ -340,14 +351,34 @@ RULES:
             Dictionary with detection results including:
             - present: Any body part visible in frame
             - at_desk: Body parts appear large/close (distance-based, face-independent)
-            - gadget_suspected: Device in hands OR on table being looked at
-            - distraction_type: Type of distraction detected (phone, tablet, controller, tv, none)
+            - gadget_suspected: Device in hands OR on table being looked at (excludes wearables)
+            - gadget_confidence: Raw confidence score (0-1) for hybrid filtering
+            - distraction_type: Type of distraction detected (phone, tablet, controller, tv, wearable, none)
         """
         result = self.analyze_frame(frame)
+        
+        # Get raw values
+        gadget_visible = result["gadget_visible"]
+        gadget_confidence = result["gadget_confidence"]
+        distraction_type = result["distraction_type"]
+        
+        # Filter out wearables - they are never distractions
+        # Even if AI detects something, if it's classified as "wearable", ignore it
+        is_wearable = distraction_type == "wearable"
+        
+        # Gadget is suspected only if:
+        # 1. Gadget is visible with sufficient confidence (>0.5)
+        # 2. It's NOT a wearable (smartwatch, fitness tracker)
+        gadget_suspected = (
+            gadget_visible 
+            and gadget_confidence > 0.5 
+            and not is_wearable
+        )
         
         return {
             "present": result["person_present"],
             "at_desk": result.get("at_desk", True),  # Default True for backward compat
-            "gadget_suspected": result["gadget_visible"] and result["gadget_confidence"] > 0.5,
-            "distraction_type": result["distraction_type"]
+            "gadget_suspected": gadget_suspected,
+            "gadget_confidence": gadget_confidence,  # Raw confidence for hybrid filtering
+            "distraction_type": distraction_type
         }
