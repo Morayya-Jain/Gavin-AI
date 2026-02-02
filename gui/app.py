@@ -609,8 +609,7 @@ from gui.ui_components import (
     get_screen_scale_factor,
     normalize_tk_scaling,
     setup_natural_scroll,
-    create_scrollable_frame,
-    _get_windows_work_area
+    create_scrollable_frame
 )
 
 # Base dimensions for scaling (larger default window) - keep for backward compat
@@ -1407,24 +1406,11 @@ class NotificationPopup:
             self.window.attributes('-transparent', True)
             self.window.config(bg='systemTransparent')
         
-        # Center on screen (Windows-aware: use work area excluding taskbar)
+        # Center on screen
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
-        
-        if sys.platform == 'win32':
-            # Try to get Windows work area for accurate centering
-            work_area = _get_windows_work_area()
-            if work_area:
-                work_left, work_top, work_width, work_height = work_area
-                x = work_left + (work_width - self.popup_width) // 2
-                y = work_top + (work_height - self.popup_height) // 2
-            else:
-                x = (screen_width - self.popup_width) // 2
-                y = (screen_height - self.popup_height) // 2
-        else:
-            x = (screen_width - self.popup_width) // 2
-            y = (screen_height - self.popup_height) // 2
-        
+        x = (screen_width - self.popup_width) // 2
+        y = (screen_height - self.popup_height) // 2
         self.window.geometry(f"{self.popup_width}x{self.popup_height}+{x}+{y}")
         
         # Build the UI
@@ -1778,16 +1764,12 @@ class BrainDockGUI:
         # Load bundled fonts before creating any UI
         load_bundled_fonts()
         
-        # Platform-specific DPI handling
-        # macOS and Windows handle DPI scaling differently
-        if sys.platform == "darwin":
-            # macOS: Disable automatic DPI scaling to match original Tkinter behavior
-            # This prevents fonts from appearing larger on Retina displays
-            ctk.deactivate_automatic_dpi_awareness()
-            ctk.set_widget_scaling(1.0)
-            ctk.set_window_scaling(1.0)
-        # Windows: Let CustomTkinter handle DPI automatically (no deactivation needed)
-        # This ensures proper scaling on high-DPI Windows displays
+        # Disable automatic DPI scaling on all platforms
+        # This allows the app to handle its own scaling based on window dimensions
+        # Works consistently on both macOS Retina and Windows high-DPI displays
+        ctk.deactivate_automatic_dpi_awareness()
+        ctk.set_widget_scaling(1.0)
+        ctk.set_window_scaling(1.0)
         
         # Set CustomTkinter appearance mode (light theme)
         ctk.set_appearance_mode("light")
@@ -2859,35 +2841,19 @@ class BrainDockGUI:
         main_width = self.root.winfo_width()
         main_height = self.root.winfo_height()
         
-        # Scale popup size - use DPI-aware sizing on Windows
-        if sys.platform == 'win32':
-            dpi_scale = self.scaling_manager.get_windows_dpi_scale()
-            if dpi_scale > 1.0:
-                # Reduce base multiplier on high-DPI Windows to prevent oversized popups
-                width_mult = 0.75 / dpi_scale + 0.25  # Ranges from ~0.6 at 150% to ~0.5 at 200%
-                height_mult = width_mult
-                popup_width = max(380, min(550, int(main_width * width_mult)))
-                popup_height = max(450, min(750, int(main_height * height_mult)))
-            else:
-                popup_width = max(380, min(550, int(main_width * 0.85)))
-                popup_height = max(450, min(750, int(main_height * 0.85)))
-        else:
-            popup_width = max(380, min(550, int(main_width * 0.85)))
-            popup_height = max(450, min(750, int(main_height * 0.85)))
+        popup_width = max(380, min(550, int(main_width * 0.85)))
+        popup_height = max(450, min(750, int(main_height * 0.85)))
         
         settings_window.geometry(f"{popup_width}x{popup_height}")
         settings_window.resizable(True, True)
         settings_window.minsize(380, 450)
         
-        # Center on parent window (Windows-aware positioning)
+        # Center on parent window
         settings_window.transient(self.root)
         settings_window.grab_set()
         
-        x, y = self.scaling_manager.get_popup_centered_position(
-            popup_width, popup_height,
-            self.root.winfo_x(), self.root.winfo_y(),
-            self.root.winfo_width(), self.root.winfo_height()
-        )
+        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
         settings_window.geometry(f"+{x}+{y}")
         
         # Main container - holds scrollable area and fixed buttons
@@ -3185,14 +3151,11 @@ class BrainDockGUI:
         sites_popup.geometry(f"{popup_width}x{popup_height}")
         sites_popup.resizable(False, False)
         
-        # Center on parent (Windows-aware positioning)
+        # Center on parent window
         sites_popup.transient(self.root)
         self.root.update_idletasks()
-        x, y = self.scaling_manager.get_popup_centered_position(
-            popup_width, popup_height,
-            self.root.winfo_x(), self.root.winfo_y(),
-            self.root.winfo_width(), self.root.winfo_height()
-        )
+        x = self.root.winfo_x() + (self.root.winfo_width() - popup_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - popup_height) // 2
         sites_popup.geometry(f"+{x}+{y}")
         
         # Make modal to ensure proper event handling
@@ -4235,15 +4198,12 @@ class BrainDockGUI:
         tutorial_window.resizable(True, True)
         tutorial_window.minsize(500, 620)
         
-        # Center on parent window (Windows-aware positioning)
+        # Center on parent window
         tutorial_window.transient(self.root)
         tutorial_window.grab_set()
         
-        x, y = self.scaling_manager.get_popup_centered_position(
-            window_width, window_height,
-            self.root.winfo_x(), self.root.winfo_y(),
-            self.root.winfo_width(), self.root.winfo_height()
-        )
+        x = self.root.winfo_x() + (self.root.winfo_width() - window_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - window_height) // 2
         tutorial_window.geometry(f"+{x}+{y}")
         
         # Main container with padding
@@ -4699,11 +4659,8 @@ class BrainDockGUI:
         # Size and position - scale based on screen and center on parent
         dialog_width, dialog_height = self.scaling_manager.get_popup_size(350, 200)
         dialog.update_idletasks()
-        x, y = self.scaling_manager.get_popup_centered_position(
-            dialog_width, dialog_height,
-            self.root.winfo_x(), self.root.winfo_y(),
-            self.root.winfo_width(), self.root.winfo_height()
-        )
+        x = self.root.winfo_x() + (self.root.winfo_width() - dialog_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - dialog_height) // 2
         dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         
         # Make modal
@@ -6343,11 +6300,10 @@ def main():
     
     if not license_manager.is_licensed() and not config.SKIP_LICENSE_CHECK:
         # Create a temporary root window for payment screen using CustomTkinter
-        # Apply same DPI settings as main GUI
-        if sys.platform == "darwin":
-            ctk.deactivate_automatic_dpi_awareness()
-            ctk.set_widget_scaling(1.0)
-            ctk.set_window_scaling(1.0)
+        # Disable automatic DPI scaling (same as main GUI) for consistent sizing
+        ctk.deactivate_automatic_dpi_awareness()
+        ctk.set_widget_scaling(1.0)
+        ctk.set_window_scaling(1.0)
         ctk.set_appearance_mode("light")
         
         payment_root = ctk.CTk()

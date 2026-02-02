@@ -27,8 +27,7 @@ from licensing.license_manager import get_license_manager
 from licensing.stripe_integration import get_stripe_integration, STRIPE_AVAILABLE
 from gui.ui_components import (
     RoundedButton, Card, StyledEntry, COLORS,
-    ScalingManager, get_ctk_font, get_font_serif, get_font_sans,
-    _get_windows_work_area
+    ScalingManager, get_ctk_font, get_font_serif, get_font_sans
 )
 from gui.font_loader import load_bundled_fonts
 
@@ -1147,27 +1146,10 @@ class PaymentScreen:
         # Set window icon for Windows (each Toplevel needs this explicitly)
         set_windows_toplevel_icon(dialog)
         
-        # Center the dialog on parent (Windows-aware positioning)
+        # Center the dialog on parent window
         dialog.update_idletasks()
-        dialog_width = 500
-        dialog_height = 220
-        
-        parent_x = self.root.winfo_x()
-        parent_y = self.root.winfo_y()
-        parent_width = self.root.winfo_width()
-        parent_height = self.root.winfo_height()
-        
-        x = parent_x + (parent_width - dialog_width) // 2
-        y = parent_y + (parent_height - dialog_height) // 2
-        
-        # Windows: ensure dialog stays within work area bounds
-        if sys.platform == 'win32':
-            work_area = _get_windows_work_area()
-            if work_area:
-                work_left, work_top, work_width, work_height = work_area
-                x = max(work_left, min(x, work_left + work_width - dialog_width))
-                y = max(work_top, min(y, work_top + work_height - dialog_height))
-        
+        x = self.root.winfo_x() + (self.root.winfo_width() - 500) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 220) // 2
         dialog.geometry(f"+{x}+{y}")
         
         # Configure dialog appearance

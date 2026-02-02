@@ -443,36 +443,9 @@ Examples:
                 
                 root.update_idletasks()
                 
-                # Center on screen (Windows-aware: use work area excluding taskbar)
-                screen_width = root.winfo_screenwidth()
-                screen_height = root.winfo_screenheight()
-                
-                if sys.platform == 'win32':
-                    # Try to get Windows work area for accurate centering
-                    try:
-                        import ctypes
-                        from ctypes import wintypes
-                        
-                        class RECT(ctypes.Structure):
-                            _fields_ = [('left', wintypes.LONG), ('top', wintypes.LONG),
-                                        ('right', wintypes.LONG), ('bottom', wintypes.LONG)]
-                        
-                        rect = RECT()
-                        if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
-                            work_width = rect.right - rect.left
-                            work_height = rect.bottom - rect.top
-                            x = rect.left + (work_width - dialog_width) // 2
-                            y = rect.top + (work_height - dialog_height) // 2
-                        else:
-                            x = (screen_width - dialog_width) // 2
-                            y = (screen_height - dialog_height) // 2
-                    except Exception:
-                        x = (screen_width - dialog_width) // 2
-                        y = (screen_height - dialog_height) // 2
-                else:
-                    x = (screen_width - dialog_width) // 2
-                    y = (screen_height - dialog_height) // 2
-                
+                # Center on screen
+                x = (root.winfo_screenwidth() - dialog_width) // 2
+                y = (root.winfo_screenheight() - dialog_height) // 2
                 root.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
                 
                 # Error icon and message
