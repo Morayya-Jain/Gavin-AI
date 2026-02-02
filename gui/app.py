@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from gui.font_loader import load_bundled_fonts, get_font_sans, get_font_serif
 
 import config
-from camera.capture import CameraCapture
+from camera.capture import CameraCapture, CameraFailureType
 from camera import get_event_type, create_vision_detector
 from tracking.session import Session
 from tracking.analytics import compute_statistics, get_focus_percentage
@@ -1814,6 +1814,46 @@ class BrainDockGUI:
         self.root.attributes('-topmost', True)
         self.root.after(100, lambda: self.root.attributes('-topmost', False))
         self.root.focus_force()
+        
+        # Pre-warm camera on Windows to reduce first-session startup delay
+        # DirectShow takes 5-10 seconds to initialize on cold start
+        # This runs in background so UI remains responsive
+        self._camera_warmed = False
+        if sys.platform == "win32":
+            self.root.after(500, self._prewarm_camera_async)
+    
+    def _prewarm_camera_async(self):
+        """
+        Start camera pre-warming in a background thread.
+        
+        On Windows, the first camera open after system/app start takes 5-10 seconds
+        due to DirectShow initialization. Pre-warming in the background eliminates
+        this delay when the user clicks "Start Session".
+        """
+        if self._camera_warmed:
+            return
+        
+        def prewarm():
+            try:
+                logger.debug("Pre-warming camera (background)...")
+                import cv2
+                
+                # Use DirectShow backend for consistency with actual capture
+                cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    # Read one frame to fully initialize the driver
+                    ret, _ = cap.read()
+                    cap.release()
+                    self._camera_warmed = True
+                    logger.debug(f"Camera pre-warmed successfully (frame read: {ret})")
+                else:
+                    cap.release()
+                    logger.debug("Camera pre-warm: could not open camera")
+            except Exception as e:
+                logger.debug(f"Camera pre-warm failed (non-critical): {e}")
+        
+        # Run in background thread so UI isn't blocked
+        threading.Thread(target=prewarm, daemon=True).start()
     
     def _set_macos_light_mode(self):
         """
@@ -4958,7 +4998,11 @@ class BrainDockGUI:
             
             with CameraCapture() as camera:
                 if not camera.is_opened:
-                    self.root.after(0, lambda: self._show_camera_error())
+                    # Capture failure info before lambda (closure issue with context manager)
+                    failure_type = camera.failure_type
+                    failure_message = camera.permission_error
+                    self.root.after(0, lambda ft=failure_type, fm=failure_message: 
+                                    self._show_camera_error(ft, fm))
                     return
                 
                 last_detection_time = time.time()
@@ -5787,23 +5831,91 @@ class BrainDockGUI:
             if result:
                 open_windows_camera_settings()
 
-    def _show_camera_error(self):
-        """Show camera access error dialog with platform-specific instructions."""
+    def _show_camera_error(
+        self, 
+        failure_type: CameraFailureType = CameraFailureType.UNKNOWN,
+        failure_message: Optional[str] = None
+    ):
+        """
+        Show camera access error dialog with type-specific messages.
+        
+        Args:
+            failure_type: The type of camera failure for specific guidance
+            failure_message: Optional detailed error message from capture module
+        """
         # Fully reset UI to idle state (including pause button, stats panel, etc.)
         self._reset_to_idle_state()
         self._update_status("idle", "Ready to Start")
         
+        # Handle each failure type with appropriate dialog
+        if failure_type == CameraFailureType.NO_HARDWARE:
+            # No camera detected - no settings to open
+            messagebox.showerror(
+                "No Camera Detected",
+                failure_message or (
+                    "No camera detected on this device.\n\n"
+                    "BrainDock requires a webcam for focus tracking.\n\n"
+                    "Please connect a camera and restart BrainDock."
+                )
+            )
+        
+        elif failure_type == CameraFailureType.IN_USE:
+            # Camera is being used by another app - no settings needed
+            messagebox.showwarning(
+                "Camera In Use",
+                failure_message or (
+                    "Camera is being used by another application.\n\n"
+                    "Please close any apps using the camera:\n"
+                    "• Video conferencing (Zoom, Teams, Meet)\n"
+                    "• Other camera apps\n"
+                    "• Browser tabs with camera access\n\n"
+                    "Then try starting the session again."
+                )
+            )
+        
+        elif failure_type == CameraFailureType.PERMISSION_RESTRICTED:
+            # Restricted by device policy - show info, no settings to open
+            messagebox.showerror(
+                "Camera Access Restricted",
+                failure_message or (
+                    "Camera access is restricted on this device.\n\n"
+                    "This may be due to:\n"
+                    "• Enterprise device policy\n"
+                    "• Parental controls\n"
+                    "• Device management (MDM)\n\n"
+                    "Please contact your IT administrator for assistance."
+                )
+            )
+        
+        elif failure_type == CameraFailureType.PERMISSION_DENIED:
+            # Permission denied - offer to open settings
+            self._show_camera_permission_settings_dialog(failure_message)
+        
+        else:
+            # Unknown or generic failure - use platform-specific dialog
+            self._show_camera_permission_settings_dialog(failure_message)
+    
+    def _show_camera_permission_settings_dialog(self, failure_message: Optional[str] = None):
+        """
+        Show dialog for permission-related camera errors with option to open settings.
+        
+        Args:
+            failure_message: Optional detailed error message
+        """
         if sys.platform == "darwin":
             # macOS-specific - use askyesno like PDF popup
             result = messagebox.askyesno(
                 "Camera Permission Required",
-                "Failed to access webcam.\n\n"
-                "On macOS, you need to grant camera permission:\n\n"
-                "1. Open System Settings\n"
-                "2. Go to Privacy & Security → Camera\n"
-                "3. Enable BrainDock in the list\n"
-                "4. Restart BrainDock\n\n"
-                "Would you like to open System Settings?"
+                failure_message or (
+                    "Camera access was denied.\n\n"
+                    "BrainDock needs camera access for focus tracking.\n\n"
+                    "To enable:\n"
+                    "1. Open System Settings\n"
+                    "2. Go to Privacy & Security → Camera\n"
+                    "3. Enable BrainDock in the list\n"
+                    "4. Restart BrainDock\n\n"
+                    "Would you like to open System Settings?"
+                )
             )
             
             if result:
@@ -5813,17 +5925,16 @@ class BrainDockGUI:
             # Windows-specific - same askyesno style with Open Settings option
             result = messagebox.askyesno(
                 "Camera Permission Required",
-                "Failed to access webcam.\n\n"
-                "On Windows, camera access may be disabled:\n\n"
-                "1. Open Windows Settings\n"
-                "2. Go to Privacy & Security → Camera\n"
-                "3. Turn on 'Camera access'\n"
-                "4. Turn on 'Let apps access your camera'\n"
-                "5. Restart BrainDock\n\n"
-                "Also check:\n"
-                "• Camera is connected\n"
-                "• No other app is using the camera\n\n"
-                "Would you like to open Settings?"
+                failure_message or (
+                    "Camera access failed.\n\n"
+                    "This may be due to Windows Privacy settings:\n"
+                    "1. Open Settings\n"
+                    "2. Go to Privacy & Security → Camera\n"
+                    "3. Ensure 'Camera access' is On\n"
+                    "4. Ensure 'Let apps access your camera' is On\n"
+                    "5. Restart BrainDock\n\n"
+                    "Would you like to open Settings?"
+                )
             )
             
             if result:
@@ -5831,14 +5942,16 @@ class BrainDockGUI:
         
         else:
             # Linux or other platforms - generic message
-            message = (
-                "Failed to access webcam.\n\n"
-                "Please check:\n"
-                "• Camera is connected\n"
-                "• Camera permissions are granted\n"
-                "• No other app is using the camera"
+            messagebox.showerror(
+                "Camera Error", 
+                failure_message or (
+                    "Failed to access webcam.\n\n"
+                    "Please check:\n"
+                    "• Camera is connected\n"
+                    "• Camera permissions are granted\n"
+                    "• No other app is using the camera"
+                )
             )
-            messagebox.showerror("Camera Error", message)
     
     def _show_detection_error(self, error: str):
         """

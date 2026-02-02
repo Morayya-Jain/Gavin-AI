@@ -5,6 +5,7 @@ import logging
 import sys
 import time
 import threading
+from enum import Enum
 from typing import Optional, Iterator, Tuple
 import numpy as np
 import config
@@ -17,6 +18,16 @@ CAMERA_PERMISSION_NOT_DETERMINED = 0
 CAMERA_PERMISSION_RESTRICTED = 1
 CAMERA_PERMISSION_DENIED = 2
 CAMERA_PERMISSION_AUTHORIZED = 3
+
+
+class CameraFailureType(Enum):
+    """Types of camera access failures for user-friendly error messages."""
+    NONE = "none"  # No failure - camera works
+    PERMISSION_DENIED = "permission_denied"  # User denied camera permission
+    PERMISSION_RESTRICTED = "permission_restricted"  # Restricted by parental controls/MDM
+    NO_HARDWARE = "no_hardware"  # No camera hardware detected
+    IN_USE = "in_use"  # Camera is being used by another application
+    UNKNOWN = "unknown"  # Unknown/generic failure
 
 
 def get_macos_camera_permission_status() -> int:
@@ -210,6 +221,7 @@ class CameraCapture:
         self.is_opened = False
         self.permission_error: Optional[str] = None  # Stores permission error message if any
         self.is_first_denial: bool = False  # True if user just denied permission for the first time
+        self.failure_type: CameraFailureType = CameraFailureType.NONE  # Type of failure for specific error handling
     
     def __enter__(self) -> 'CameraCapture':
         """Context manager entry - open the camera."""
@@ -242,6 +254,11 @@ class CameraCapture:
                     logger.error(f"Camera permission not granted: {error_message}")
                     self.permission_error = error_message  # Store for GUI to display
                     self.is_first_denial = is_first_denial  # Track if this was first-time denial
+                    # Determine failure type based on the error message
+                    if "restricted" in error_message.lower():
+                        self.failure_type = CameraFailureType.PERMISSION_RESTRICTED
+                    else:
+                        self.failure_type = CameraFailureType.PERMISSION_DENIED
                     return False
             
             print(f"[BrainDock] Opening camera at index {self.camera_index}...")
@@ -262,17 +279,10 @@ class CameraCapture:
                 self.cap.release()
                 self.cap = None
                 
-                # Provide Windows-specific guidance for camera access issues
-                if sys.platform == "win32":
-                    self.permission_error = (
-                        "Camera access failed.\n\n"
-                        "This may be due to Windows Privacy settings:\n"
-                        "1. Open Settings\n"
-                        "2. Go to Privacy & Security → Camera\n"
-                        "3. Ensure 'Camera access' is On\n"
-                        "4. Ensure 'Let apps access your camera' is On\n"
-                        "5. Restart BrainDock"
-                    )
+                # Determine the failure type by trying to detect available cameras
+                failure_type, error_msg = self._diagnose_camera_failure()
+                self.failure_type = failure_type
+                self.permission_error = error_msg
                 
                 return False
             
@@ -313,25 +323,34 @@ class CameraCapture:
             # On macOS, isOpened() can return True even without camera permission
             # The permission prompt only appears when we try to read a frame
             #
-            # Important: On macOS, when the camera permission dialog first appears,
-            # cap.read() may fail while the user is still responding to the dialog.
-            # We retry many times with delays to give the user unlimited time to respond.
-            # macOS: 120 attempts * 0.5s = 60 seconds max wait time for permission dialog
-            # Windows: 25 attempts * 0.3s = ~7.5 seconds (some USB cameras need time to initialize)
-            # Linux: 3 attempts * 0.5s = 1.5 seconds
+            # Retry strategy by platform:
+            # - macOS: Long wait (60s) for permission dialog response
+            # - Windows: Fast initial retries (camera often ready immediately if pre-warmed),
+            #            then slower retries for cold-start scenarios
+            # - Linux: Quick retries, cameras usually respond fast
             if sys.platform == "darwin":
                 max_read_attempts = 120  # 60 seconds for permission dialog
+                read_delays = [0.5] * 120  # Consistent 0.5s delays
             elif sys.platform == "win32":
-                max_read_attempts = 25   # More retries for USB cameras that initialize slowly
+                # Windows: Fast initial attempts (0.05s), then gradually slower
+                # This handles both warmed cameras (instant) and cold starts (~5s)
+                # Total max wait: ~8 seconds (but usually <1s if pre-warmed)
+                read_delays = (
+                    [0.05] * 5 +   # 5 fast attempts (0.25s total)
+                    [0.1] * 5 +    # 5 medium attempts (0.5s total)  
+                    [0.2] * 10 +   # 10 slower attempts (2s total)
+                    [0.5] * 10     # 10 slow attempts (5s total)
+                )
+                max_read_attempts = len(read_delays)
             else:
-                max_read_attempts = 3    # Linux unchanged
-            read_delay = 0.3 if sys.platform == "win32" else 0.5
+                max_read_attempts = 5
+                read_delays = [0.3] * 5  # Linux: quick retries
             
             if sys.platform == "darwin":
                 print(f"[BrainDock] Requesting camera access...")
                 print(f"[BrainDock] If a permission dialog appears, please click 'OK' or 'Allow'")
             else:
-                print(f"[BrainDock] Attempting to read frame...")
+                logger.debug(f"[BrainDock] Reading first frame...")
             
             permission_dialog_shown = False
             for attempt in range(max_read_attempts):
@@ -340,7 +359,7 @@ class CameraCapture:
                     if sys.platform == "darwin" and attempt > 0:
                         print(f"[BrainDock] Camera access granted! Starting session...")
                     else:
-                        print(f"[BrainDock] Camera ready!")
+                        logger.debug(f"[BrainDock] Camera ready (attempt {attempt + 1})")
                     break
                     
                 if attempt < max_read_attempts - 1:
@@ -357,17 +376,45 @@ class CameraCapture:
                             print("[BrainDock] Camera permission dialog may be behind other windows")
                             print("[BrainDock] Check your taskbar/dock for the permission prompt")
                         elif attempt % 20 == 0 and attempt > 60:
-                            elapsed_secs = int(attempt * read_delay)
-                            print(f"[BrainDock] Waiting for camera access ({elapsed_secs}s elapsed)...")
+                            elapsed_secs = sum(read_delays[:attempt])
+                            print(f"[BrainDock] Waiting for camera access ({elapsed_secs:.0f}s elapsed)...")
                     else:
-                        if attempt % 10 == 0:
-                            logger.debug(f"Waiting for camera access (attempt {attempt + 1}/{max_read_attempts})...")
+                        # Windows/Linux: only log after several failed attempts
+                        if attempt == 10:
+                            logger.debug("Camera initializing (cold start)...")
                     
-                    time.sleep(read_delay)
+                    time.sleep(read_delays[attempt])
             
             if not ret or test_frame is None:
                 logger.error("Camera opened but cannot read frames - permission may be denied")
                 self.cap.release()
+                self.cap = None
+                
+                # Frame read failed after camera opened - likely permission issue
+                # On macOS, this means user denied permission or it timed out
+                if sys.platform == "darwin":
+                    self.failure_type = CameraFailureType.PERMISSION_DENIED
+                    self.permission_error = (
+                        "Camera access was denied.\n\n"
+                        "To enable camera access:\n"
+                        "1. Open System Settings\n"
+                        "2. Go to Privacy & Security → Camera\n"
+                        "3. Enable BrainDock\n"
+                        "4. Restart BrainDock"
+                    )
+                elif sys.platform == "win32":
+                    # On Windows, could be permission or in-use issue
+                    self.failure_type = CameraFailureType.IN_USE
+                    self.permission_error = (
+                        "Camera may be in use by another application.\n\n"
+                        "Please close other apps using the camera (Zoom, Teams, etc.) "
+                        "and try again.\n\n"
+                        "If problem persists, check Windows Privacy settings."
+                    )
+                else:
+                    self.failure_type = CameraFailureType.UNKNOWN
+                    self.permission_error = "Unable to read from camera."
+                
                 return False
             
             self.is_opened = True
@@ -377,7 +424,116 @@ class CameraCapture:
             
         except Exception as e:
             logger.error(f"Error opening camera: {e}")
+            self.failure_type = CameraFailureType.UNKNOWN
+            self.permission_error = f"Unexpected error accessing camera: {str(e)}"
             return False
+    
+    def _diagnose_camera_failure(self) -> Tuple[CameraFailureType, str]:
+        """
+        Diagnose the reason for camera failure by checking available devices.
+        
+        Tries to determine if the failure is due to:
+        - No hardware: No cameras detected on the system
+        - In use: Camera exists but is being used by another app
+        - Permission denied: OS-level permission restriction
+        
+        Returns:
+            Tuple of (CameraFailureType, error_message)
+        """
+        # Try to enumerate available cameras
+        available_cameras = self._count_available_cameras()
+        
+        if available_cameras == 0:
+            # No cameras detected at all
+            logger.info("No camera hardware detected on this system")
+            return CameraFailureType.NO_HARDWARE, (
+                "No camera detected.\n\n"
+                "Please check:\n"
+                "• Your webcam is connected\n"
+                "• Camera drivers are installed\n"
+                "• Camera is not disabled in Device Manager (Windows)\n"
+                "  or System Information (macOS)"
+            )
+        
+        # Camera hardware exists but we can't access it
+        if sys.platform == "win32":
+            # On Windows, most likely causes are permission or in-use
+            # Try a quick re-open to see if it's a transient in-use issue
+            test_cap = cv2.VideoCapture(self.camera_index)
+            if test_cap.isOpened():
+                # Camera opened this time - was temporarily in use
+                test_cap.release()
+                return CameraFailureType.IN_USE, (
+                    "Camera is being used by another application.\n\n"
+                    "Please close any apps that might be using the camera:\n"
+                    "• Video conferencing (Zoom, Teams, Meet)\n"
+                    "• Other camera apps\n"
+                    "• Browser tabs with camera access\n\n"
+                    "Then try again."
+                )
+            test_cap.release()
+            
+            # Still can't open - likely permission
+            return CameraFailureType.PERMISSION_DENIED, (
+                "Camera access failed.\n\n"
+                "This may be due to Windows Privacy settings:\n"
+                "1. Open Settings\n"
+                "2. Go to Privacy & Security → Camera\n"
+                "3. Ensure 'Camera access' is On\n"
+                "4. Ensure 'Let apps access your camera' is On\n"
+                "5. Restart BrainDock"
+            )
+        
+        elif sys.platform == "darwin":
+            # On macOS, if we got here, permission check already passed
+            # Most likely camera is in use by another app
+            return CameraFailureType.IN_USE, (
+                "Camera is being used by another application.\n\n"
+                "Please close any apps that might be using the camera:\n"
+                "• Video conferencing (Zoom, Teams, FaceTime)\n"
+                "• Photo Booth\n"
+                "• Browser tabs with camera access\n\n"
+                "Then try again."
+            )
+        
+        else:
+            # Linux or other
+            return CameraFailureType.UNKNOWN, (
+                "Failed to access webcam.\n\n"
+                "Please check:\n"
+                "• Camera is connected\n"
+                "• Camera permissions are granted\n"
+                "• No other app is using the camera"
+            )
+    
+    def _count_available_cameras(self) -> int:
+        """
+        Count the number of available cameras on the system.
+        
+        Returns:
+            Number of cameras detected (may be approximate)
+        """
+        # OpenCV doesn't have a direct way to enumerate cameras
+        # We'll try opening camera indices 0-3 as a heuristic
+        count = 0
+        for i in range(4):
+            try:
+                if sys.platform == "win32":
+                    cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+                else:
+                    cap = cv2.VideoCapture(i)
+                
+                if cap.isOpened():
+                    count += 1
+                    cap.release()
+                else:
+                    cap.release()
+                    # On some systems, indices aren't contiguous
+                    # Continue checking a few more indices
+            except Exception:
+                continue
+        
+        return count
     
     def close(self) -> None:
         """Close the camera and release resources."""
