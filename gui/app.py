@@ -2896,6 +2896,7 @@ class BrainDockGUI:
         
         # --- Scrollable content area using CTkScrollableFrame ---
         # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
+        # Note: On Windows, content must be added directly (no nested wrapper frame)
         scrollable_frame = ctk.CTkScrollableFrame(
             main_container,
             fg_color=COLORS["bg_primary"],
@@ -2907,40 +2908,37 @@ class BrainDockGUI:
         # Set up natural scrolling (cross-platform, physics-based momentum)
         natural_scroller = setup_natural_scroll(scrollable_frame, settings_window)
         
-        # --- Content inside scrollable frame ---
-        content_padding = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
-        content_padding.pack(fill=tk.BOTH, expand=True, padx=15)
-        
+        # --- Content inside scrollable frame (added directly, no wrapper frame for Windows compatibility) ---
         # Title
         title = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Screen Settings",
             font=self._font_to_tuple(self.font_title),
             text_color=COLORS["accent_primary"]
         )
-        title.pack(pady=(0, 3))
+        title.pack(pady=(0, 3), padx=15)
         
         subtitle = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Select sites/apps categorised as distractions",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
-        subtitle.pack(pady=(0, 15))
+        subtitle.pack(pady=(0, 15), padx=15)
         
         # Quick Select section
         quick_sites_label = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Quick Select",
             font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
-        quick_sites_label.pack(anchor="w", pady=(0, 10))
+        quick_sites_label.pack(anchor="w", pady=(0, 10), padx=15)
         
         # Quick site toggles - two-column layout
         self.quick_site_vars = {}
-        quick_sites_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
-        quick_sites_frame.pack(fill=tk.X, pady=(0, 0))
+        quick_sites_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+        quick_sites_frame.pack(fill=tk.X, pady=(0, 0), padx=15)
         
         # Configure two columns with equal weight
         quick_sites_frame.columnconfigure(0, weight=1)
@@ -2980,24 +2978,24 @@ class BrainDockGUI:
         
         # --- Custom URLs section ---
         urls_label = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Custom URLs/Domains",
             font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
-        urls_label.pack(anchor="w", pady=(25, 5))
+        urls_label.pack(anchor="w", pady=(25, 5), padx=15)
         
         urls_help = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Add more website URLs as distractions (e.g., example.com)",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
-        urls_help.pack(anchor="w", pady=(0, 5))
+        urls_help.pack(anchor="w", pady=(0, 5), padx=15)
         
         # URLs text area
         self.custom_urls_text = ctk.CTkTextbox(
-            content_padding,
+            scrollable_frame,
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["bg_secondary"],
@@ -3007,16 +3005,16 @@ class BrainDockGUI:
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.custom_urls_text.pack(fill=tk.X, pady=(0, 0))
+        self.custom_urls_text.pack(fill=tk.X, pady=(0, 0), padx=15)
         
         # URL validation status label
         self.url_validation_label = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
-        self.url_validation_label.pack(anchor="w")
+        self.url_validation_label.pack(anchor="w", padx=15)
         self.url_validation_tooltip = Tooltip(self.url_validation_label, "")
         
         # Populate with current custom URLs
@@ -3025,24 +3023,24 @@ class BrainDockGUI:
         
         # --- Custom Apps section ---
         apps_label = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Custom App Names",
             font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
-        apps_label.pack(anchor="w", pady=(5, 5))
+        apps_label.pack(anchor="w", pady=(5, 5), padx=15)
         
         apps_help = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="Add more app names as distractions (e.g., Steam, Discord)",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
-        apps_help.pack(anchor="w", pady=(0, 5))
+        apps_help.pack(anchor="w", pady=(0, 5), padx=15)
         
         # Apps text area
         self.custom_apps_text = ctk.CTkTextbox(
-            content_padding,
+            scrollable_frame,
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["bg_secondary"],
@@ -3052,16 +3050,16 @@ class BrainDockGUI:
             border_width=1,
             border_color=COLORS["border"]
         )
-        self.custom_apps_text.pack(fill=tk.X, pady=(0, 0))
+        self.custom_apps_text.pack(fill=tk.X, pady=(0, 0), padx=15)
         
         # App validation status label
         self.app_validation_label = ctk.CTkLabel(
-            content_padding,
+            scrollable_frame,
             text="",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
-        self.app_validation_label.pack(anchor="w")
+        self.app_validation_label.pack(anchor="w", padx=15)
         self.app_validation_tooltip = Tooltip(self.app_validation_label, "")
         
         # Populate with current custom apps
@@ -3073,8 +3071,8 @@ class BrainDockGUI:
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
         # AI Fallback option
-        ai_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
-        ai_frame.pack(fill=tk.X, pady=(15, 15))
+        ai_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+        ai_frame.pack(fill=tk.X, pady=(15, 15), padx=15)
         
         self.ai_fallback_var = tk.BooleanVar(value=self.use_ai_fallback)
         ai_cb = ctk.CTkCheckBox(
@@ -4258,6 +4256,7 @@ class BrainDockGUI:
         # --- Scrollable content area using CTkScrollableFrame ---
         # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
         # Packed last to fill remaining space between header and footer
+        # Note: On Windows, content must be added directly (no nested wrapper frame)
         scrollable_frame = ctk.CTkScrollableFrame(
             main_container,
             fg_color=COLORS["bg_primary"],
@@ -4265,10 +4264,6 @@ class BrainDockGUI:
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
         scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=10)
-        
-        # Content wrapper inside scrollable frame (matches settings pattern)
-        content_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=10)
         
         # Set up natural scrolling (cross-platform, physics-based momentum)
         natural_scroller = setup_natural_scroll(scrollable_frame, tutorial_window)
@@ -4338,10 +4333,10 @@ class BrainDockGUI:
         # Store description labels for dynamic resizing
         desc_labels = []
         
-        # Create tutorial sections
+        # Create tutorial sections (added directly to scrollable_frame for Windows compatibility)
         for i, (icon, icon_color, section_title, description) in enumerate(tutorial_sections):
-            section_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
-            section_frame.pack(fill=tk.X, pady=(0, 25))
+            section_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+            section_frame.pack(fill=tk.X, pady=(0, 25), padx=10)
             
             # Icon and title row
             section_header_frame = ctk.CTkFrame(section_frame, fg_color=COLORS["bg_primary"])
@@ -4383,15 +4378,15 @@ class BrainDockGUI:
             desc_label.pack(fill=tk.X, pady=(12, 0), padx=(40, 0))  # Align with title text
             desc_labels.append(desc_label)
         
-        # Update description wraplength when content frame is resized
+        # Update description wraplength when scrollable frame is resized
         def _update_desc_wraplength(event):
             """Update description label wraplength when window is resized."""
-            new_width = max(200, event.width - 40)  # Subtract text left padding
+            new_width = max(200, event.width - 60)  # Subtract text left padding and section padx
             for label in desc_labels:
                 label.configure(wraplength=new_width)
         
-        # Bind content frame configure event to update wraplength
-        content_frame.bind("<Configure>", _update_desc_wraplength)
+        # Bind scrollable frame configure event to update wraplength
+        scrollable_frame.bind("<Configure>", _update_desc_wraplength)
         
         # Force scrollable frame to render on Windows
         # Windows requires explicit scroll region configuration for CTkScrollableFrame

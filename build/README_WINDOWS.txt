@@ -85,6 +85,23 @@ Start > BrainDock > Uninstall BrainDock
 
 TROUBLESHOOTING
 ---------------
+
+"Unable to open file in temporary directory" Error:
+This usually happens when antivirus software interferes with the installer.
+
+1. Temporarily disable Windows Defender real-time protection:
+   Settings > Privacy & Security > Windows Security > Virus & threat protection
+   > Manage settings > Turn off "Real-time protection"
+   
+2. Run the installer again
+
+3. Re-enable real-time protection after installation completes
+
+4. Add an exclusion for BrainDock:
+   Windows Security > Virus & threat protection > Manage settings
+   > Exclusions > Add exclusion > Folder
+   Add: C:\Program Files\BrainDock
+
 If the app doesn't start:
 
 1. Try running as Administrator:

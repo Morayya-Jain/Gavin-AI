@@ -673,9 +673,13 @@ jobs:
             
             **Windows:**
             1. Download and run BrainDock-Setup.exe
-            2. Follow the installation wizard
-            3. Launch BrainDock from Start Menu or Desktop
-            4. If SmartScreen appears, click "More info" then "Run anyway"
+            2. If SmartScreen appears, click "More info" then "Run anyway"
+            3. If you see "Unable to open file in temporary directory":
+               - Temporarily disable Windows Defender real-time protection
+               - Run the installer again
+               - Re-enable protection after installation
+            4. Follow the installation wizard
+            5. Launch BrainDock from Start Menu or Desktop
             
             ### Requirements
             - A webcam for focus monitoring

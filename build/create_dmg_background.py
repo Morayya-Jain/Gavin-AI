@@ -23,7 +23,7 @@ except ImportError:
 # Paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-SOURCE_LOGO = PROJECT_ROOT / "assets" / "White Logo.png"
+SOURCE_LOGO = PROJECT_ROOT / "assets" / "logo_icon.png"
 OUTPUT_PATH = SCRIPT_DIR / "dmg_background.png"
 
 # DMG window dimensions (standard size for installer windows)

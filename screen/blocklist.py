@@ -292,7 +292,8 @@ class Blocklist:
         self,
         url: Optional[str] = None,
         window_title: Optional[str] = None,
-        app_name: Optional[str] = None
+        app_name: Optional[str] = None,
+        page_title: Optional[str] = None
     ) -> Tuple[bool, Optional[str]]:
         """
         Check if the current screen content matches any blocklist pattern.
@@ -306,10 +307,15 @@ class Blocklist:
         - Patterns starting with "://" require that exact prefix (e.g., "://x.com")
         - App names are still matched as substrings for flexibility
         
+        Page Title Matching (for browsers when URL unavailable):
+        - Extracts site names from page titles (e.g., "YouTube" from window title)
+        - Uses smart matching to detect common sites even without URL
+        
         Args:
             url: Current browser URL (if available)
             window_title: Active window title
             app_name: Active application name
+            page_title: Extracted page title from browser window (fallback when no URL)
             
         Returns:
             Tuple of (is_distracted, matched_pattern)
@@ -321,6 +327,7 @@ class Blocklist:
         url_lower = url.lower() if url else None
         window_title_lower = window_title.lower() if window_title else None
         app_name_lower = app_name.lower() if app_name else None
+        page_title_lower = page_title.lower() if page_title else None
         
         # Check each pattern against appropriate targets
         for pattern in patterns:
@@ -339,10 +346,18 @@ class Blocklist:
                     if window_title_lower and self._match_domain(pattern_lower, window_title_lower):
                         logger.debug(f"Distraction detected: '{pattern}' matched window title")
                         return True, pattern
+                    
+                    # For browsers without URL: check if domain name appears in page title
+                    # e.g., "youtube.com" -> check for "youtube" in page title
+                    if page_title_lower and not url_lower:
+                        domain_name = self._extract_domain_name(pattern_lower)
+                        if domain_name and self._match_site_in_title(domain_name, page_title_lower):
+                            logger.debug(f"Distraction detected: '{pattern}' matched page title '{page_title[:50]}'")
+                            return True, pattern
                 else:
                     # App name matching: use simple substring match
                     # Check all text sources for app name patterns
-                    check_texts = [t for t in [window_title_lower, app_name_lower] if t]
+                    check_texts = [t for t in [window_title_lower, app_name_lower, page_title_lower] if t]
                     for text in check_texts:
                         if pattern_lower in text:
                             logger.debug(f"Distraction detected: '{pattern}' found in '{text[:50]}'")
@@ -359,6 +374,88 @@ class Blocklist:
             self._remove_invalid_patterns(patterns_to_remove)
         
         return False, None
+    
+    def _extract_domain_name(self, domain_pattern: str) -> Optional[str]:
+        """
+        Extract the site name from a domain pattern.
+        
+        For example:
+        - "youtube.com" -> "youtube"
+        - "www.facebook.com" -> "facebook"
+        - "://x.com" -> "x"
+        
+        Args:
+            domain_pattern: Domain pattern (lowercase)
+            
+        Returns:
+            Site name or None
+        """
+        # Remove protocol prefixes
+        clean = domain_pattern
+        for prefix in ["://", "www.", "http://", "https://"]:
+            if clean.startswith(prefix):
+                clean = clean[len(prefix):]
+        
+        # Remove path and everything after
+        if "/" in clean:
+            clean = clean.split("/")[0]
+        
+        # Get the domain name (before .com, .net, etc.)
+        if "." in clean:
+            parts = clean.split(".")
+            # Usually the first part is the site name
+            # But handle cases like "co.uk" domains
+            if len(parts) >= 2:
+                return parts[0] if parts[0] not in ["www", "m", "mobile", "web"] else parts[1] if len(parts) > 1 else None
+        
+        return clean if clean else None
+    
+    def _match_site_in_title(self, site_name: str, title: str) -> bool:
+        """
+        Check if a site name appears in a page title with word boundary awareness.
+        
+        Prevents false positives like "tube" matching "YouTube" when looking for
+        just "tube" (though "youtube" should match "YouTube").
+        
+        Args:
+            site_name: Site name to search for (lowercase, e.g., "youtube")
+            title: Page title to search in (lowercase)
+            
+        Returns:
+            True if site appears to be present in title
+        """
+        if not site_name or not title:
+            return False
+        
+        # Common site name variations that should match
+        # Map site names to common variations found in page titles
+        site_title_variations = {
+            "youtube": ["youtube", "yt"],
+            "facebook": ["facebook", "fb"],
+            "instagram": ["instagram", "ig"],
+            "twitter": ["twitter", "x "],  # Note: "x " with space to avoid matching random x's
+            "tiktok": ["tiktok", "tik tok"],
+            "reddit": ["reddit"],
+            "netflix": ["netflix"],
+            "twitch": ["twitch"],
+            "discord": ["discord"],
+            "whatsapp": ["whatsapp"],
+            "telegram": ["telegram"],
+            "snapchat": ["snapchat"],
+            "pinterest": ["pinterest"],
+            "linkedin": ["linkedin"],
+        }
+        
+        # Check if we have known variations for this site
+        if site_name in site_title_variations:
+            for variation in site_title_variations[site_name]:
+                if variation in title:
+                    return True
+        
+        # Default: simple substring check for the site name
+        # This catches cases where the site name appears in the title
+        # e.g., "YouTube - Watching videos" contains "youtube"
+        return site_name in title
     
     def _match_domain(self, pattern: str, text: str) -> bool:
         """

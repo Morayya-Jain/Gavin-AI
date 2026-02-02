@@ -29,10 +29,8 @@ except ImportError:
 # Paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-# Use logo_icon.png (has transparency) as the brain logo source
+# Use logo_icon.png (1024x1024 with transparency) as the source
 LOGO_SOURCE = PROJECT_ROOT / "assets" / "logo_icon.png"
-# Fallback to White Logo if logo_icon doesn't exist
-FALLBACK_LOGO = PROJECT_ROOT / "assets" / "White Logo.png"
 OUTPUT_DIR = SCRIPT_DIR  # Output to build/ directory
 
 # Icon sizes required for each platform
@@ -257,18 +255,13 @@ def main():
     print("=" * 50)
     print()
     
-    # Determine which logo to use
-    if LOGO_SOURCE.exists():
-        logo_path = LOGO_SOURCE
-        print(f"Using logo: {logo_path.name}")
-    elif FALLBACK_LOGO.exists():
-        logo_path = FALLBACK_LOGO
-        print(f"Using fallback logo: {logo_path.name}")
-    else:
-        print(f"Error: No logo found!")
-        print(f"  Tried: {LOGO_SOURCE}")
-        print(f"  Tried: {FALLBACK_LOGO}")
+    # Verify logo exists
+    if not LOGO_SOURCE.exists():
+        print(f"Error: Logo not found at {LOGO_SOURCE}")
         sys.exit(1)
+    
+    logo_path = LOGO_SOURCE
+    print(f"Using logo: {logo_path.name}")
     
     print(f"Source: {logo_path}")
     print(f"Output: {OUTPUT_DIR}")

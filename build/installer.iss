@@ -39,8 +39,10 @@ DefaultGroupName={#MyAppName}
 ; Output settings
 OutputDir=..\dist
 OutputBaseFilename=BrainDock-Setup
-Compression=lzma2/ultra64
-SolidCompression=yes
+; Use zip compression for fastest installation speed
+; Trade-off: ~20-25% larger installer but 5-10x faster to install
+Compression=zip/9
+SolidCompression=no
 
 ; Appearance - BrainDock branding
 SetupIconFile=icon.ico
@@ -71,6 +73,17 @@ ShowLanguageDialog=auto
 
 ; Minimum Windows version (Windows 10+)
 MinVersion=10.0
+
+; Performance and compatibility settings
+; Helps with "Unable to open file in temporary directory" errors
+DisableStartupPrompt=yes
+SetupLogging=yes
+CloseApplications=yes
+RestartApplications=no
+
+; Use 32-bit installer for maximum compatibility (runs on both 32/64-bit Windows)
+; Note: The app itself is still 64-bit, this just affects the installer stub
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
