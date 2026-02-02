@@ -2665,6 +2665,9 @@ class BrainDockGUI:
         settings_window.title("Screen Settings")
         settings_window.configure(fg_color=COLORS["bg_primary"])
         
+        # Force window to initialize before setting geometry (required for Windows rendering)
+        settings_window.update_idletasks()
+        
         # Scale popup size based on the main window's current size
         # Use 85% of main window dimensions, with reasonable min/max bounds
         main_width = self.root.winfo_width()
@@ -2902,6 +2905,9 @@ class BrainDockGUI:
         # Bind validation on text change
         self.custom_urls_text.bind("<KeyRelease>", lambda e: self._validate_urls_realtime())
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
+        
+        # Force content to render (required for Windows - CTkScrollableFrame needs update)
+        settings_window.update()
         
         # AI Fallback option
         ai_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
@@ -4000,6 +4006,9 @@ class BrainDockGUI:
         tutorial_window.title("How to Use BrainDock")
         tutorial_window.configure(fg_color=COLORS["bg_primary"])
         
+        # Force window to initialize before setting geometry (required for Windows rendering)
+        tutorial_window.update_idletasks()
+        
         # Calculate scaled popup size with minimum height to ensure buttons visible
         window_width, window_height = self.scaling_manager.get_popup_size(
             680, 720, min_width=500, min_height=620
@@ -4196,6 +4205,9 @@ class BrainDockGUI:
         
         # Bind content frame configure event to update wraplength
         content_frame.bind("<Configure>", _update_desc_wraplength)
+        
+        # Force content to render (required for Windows - CTkScrollableFrame needs update)
+        tutorial_window.update()
         
         logger.debug("Tutorial popup opened")
     
