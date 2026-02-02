@@ -10,6 +10,26 @@ import tkinter as tk
 from tkinter import messagebox, font as tkfont
 import customtkinter as ctk
 from customtkinter import CTkFont
+
+# --- Python 3.14 compatibility patch for customtkinter ---
+# CustomTkinter's CTkFrame._draw() can be called before _canvas is initialized
+# on Python 3.14 due to early <Configure> events. Patch to handle None canvas.
+def _patch_ctk_frame_for_python314():
+    """Patch CTkFrame._draw to handle None canvas (Python 3.14 compatibility)."""
+    from customtkinter.windows.widgets.ctk_frame import CTkFrame
+    _original_draw = CTkFrame._draw
+    
+    def _safe_draw(self, no_color_updates=False):
+        # Skip draw if canvas not yet initialized (early Configure event)
+        if self._canvas is None:
+            return
+        return _original_draw(self, no_color_updates=no_color_updates)
+    
+    CTkFrame._draw = _safe_draw
+
+_patch_ctk_frame_for_python314()
+# --- End Python 3.14 compatibility patch ---
+
 import threading
 import time
 import logging
@@ -2836,11 +2856,11 @@ class BrainDockGUI:
         
         # Windows-specific: withdraw window during content setup, then deiconify after
         # This prevents rendering issues with CTkScrollableFrame on Windows
+        # Also call update_idletasks() only on Windows - on macOS/Python 3.14 it triggers
+        # customtkinter's internal frames to redraw before their canvas is initialized
         if sys.platform == "win32":
             settings_window.withdraw()
-        
-        # Force window to initialize before setting geometry (required for Windows rendering)
-        settings_window.update_idletasks()
+            settings_window.update_idletasks()
         
         # Scale popup size based on the main window's current size
         # Use 85% of main window dimensions, with reasonable min/max bounds
@@ -4190,11 +4210,11 @@ class BrainDockGUI:
         
         # Windows-specific: withdraw window during content setup, then deiconify after
         # This prevents rendering issues with CTkScrollableFrame on Windows
+        # Also call update_idletasks() only on Windows - on macOS/Python 3.14 it triggers
+        # customtkinter's internal frames to redraw before their canvas is initialized
         if sys.platform == "win32":
             tutorial_window.withdraw()
-        
-        # Force window to initialize before setting geometry (required for Windows rendering)
-        tutorial_window.update_idletasks()
+            tutorial_window.update_idletasks()
         
         # Calculate scaled popup size with minimum height to ensure buttons visible
         window_width, window_height = self.scaling_manager.get_popup_size(
@@ -4663,8 +4683,10 @@ class BrainDockGUI:
         self._set_toplevel_icon(dialog)
         
         # Size and position - scale based on screen and center on parent
+        # Call update_idletasks on root (not dialog) to avoid triggering customtkinter
+        # frame redraws before canvas initialization on macOS/Python 3.14
         dialog_width, dialog_height = self.scaling_manager.get_popup_size(350, 200)
-        dialog.update_idletasks()
+        self.root.update_idletasks()
         x = self.root.winfo_x() + (self.root.winfo_width() - dialog_width) // 2
         y = self.root.winfo_y() + (self.root.winfo_height() - dialog_height) // 2
         dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
