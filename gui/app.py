@@ -1702,20 +1702,9 @@ class BrainDockGUI:
         
         self.root.configure(fg_color=COLORS["bg_primary"])
         
-        # Set window icon (important for Windows taskbar)
+        # Set window icon (important for Windows taskbar and title bar)
         if sys.platform == 'win32':
-            try:
-                # Try bundled icon first (PyInstaller), then development path
-                if getattr(sys, 'frozen', False):
-                    icon_path = Path(sys._MEIPASS) / 'assets' / 'icon.ico'
-                else:
-                    icon_path = config.BASE_DIR / 'build' / 'icon.ico'
-                
-                if icon_path.exists():
-                    self.root.iconbitmap(str(icon_path))
-                    logger.debug(f"Set window icon from: {icon_path}")
-            except Exception as e:
-                logger.debug(f"Could not set window icon: {e}")
+            self._set_windows_icon()
         
         # Set light appearance on macOS (makes title bar white instead of dark)
         if sys.platform == "darwin":
@@ -1878,6 +1867,53 @@ class BrainDockGUI:
             logger.debug("PyObjC not available - title bar will follow system theme")
         except Exception as e:
             logger.debug(f"Could not set macOS light mode: {e}")
+    
+    def _set_windows_icon(self):
+        """
+        Set the window and taskbar icon on Windows.
+        
+        Tries multiple icon locations and methods to ensure the icon displays
+        in the title bar, taskbar, and Alt+Tab switcher.
+        """
+        if sys.platform != 'win32':
+            return
+            
+        icon_locations = []
+        
+        # Try bundled icon first (PyInstaller), then development paths
+        if getattr(sys, 'frozen', False):
+            # PyInstaller bundle - icon should be in assets folder
+            icon_locations.append(Path(sys._MEIPASS) / 'assets' / 'icon.ico')
+            # Also try root of bundle
+            icon_locations.append(Path(sys._MEIPASS) / 'icon.ico')
+        else:
+            # Development mode - try build folder
+            icon_locations.append(config.BASE_DIR / 'build' / 'icon.ico')
+            # Also try assets folder in case it was copied there
+            icon_locations.append(config.BASE_DIR / 'assets' / 'icon.ico')
+        
+        icon_path = None
+        for loc in icon_locations:
+            if loc.exists():
+                icon_path = loc
+                break
+        
+        if not icon_path:
+            logger.warning(f"Windows icon not found. Tried: {icon_locations}")
+            return
+        
+        try:
+            # Use iconbitmap with the 'default' parameter to set for all windows
+            self.root.iconbitmap(default=str(icon_path))
+            logger.info(f"Set Windows icon from: {icon_path}")
+        except Exception as e:
+            logger.warning(f"Could not set window icon via iconbitmap: {e}")
+            # Fallback: try without 'default' parameter
+            try:
+                self.root.iconbitmap(str(icon_path))
+                logger.info(f"Set Windows icon (fallback) from: {icon_path}")
+            except Exception as e2:
+                logger.error(f"Failed to set Windows icon: {e2}")
     
     def _create_fonts(self, scale: float = None):
         """
