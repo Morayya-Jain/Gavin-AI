@@ -398,10 +398,10 @@ class WindowDetector:
                 self._write_debug(f"PAGE TITLE: '{page_title}'")
                 logger.info(f"Windows detection: extracted page_title='{page_title}'")
                 
-                # Try to get actual URL (requires pywinauto or UI Automation)
-                url = self._get_browser_url_windows(hwnd, app_name_lower)
-                self._write_debug(f"URL: '{url}'")
-                logger.info(f"Windows detection: url='{url}'")
+                # Skip URL detection on Windows - it's slow and unreliable
+                # Page title matching is sufficient for distraction detection
+                url = None
+                self._write_debug(f"URL: skipped (using page title)")
             
             return WindowInfo(
                 app_name=app_name,

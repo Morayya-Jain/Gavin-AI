@@ -374,9 +374,11 @@ class Blocklist:
                     # "x.com" from matching "netflix.com"
                     if url_lower and self._match_domain(pattern_lower, url_lower):
                         logger.debug(f"Distraction detected: '{pattern}' matched URL '{url[:50]}'")
+                        self._write_debug_file(f"MATCH: '{pattern}' matched URL")
                         return True, pattern
                     if window_title_lower and self._match_domain(pattern_lower, window_title_lower):
                         logger.debug(f"Distraction detected: '{pattern}' matched window title")
+                        self._write_debug_file(f"MATCH: '{pattern}' matched window title")
                         return True, pattern
                     
                     # For browsers: check if domain name appears in page title
@@ -384,8 +386,10 @@ class Blocklist:
                     # e.g., "youtube.com" -> check for "youtube" in page title
                     if page_title_lower:
                         domain_name = self._extract_domain_name(pattern_lower)
+                        self._write_debug_file(f"TRYING: pattern='{pattern}', domain_name='{domain_name}', page_title_lower='{page_title_lower}'")
                         if domain_name and self._match_site_in_title(domain_name, page_title_lower):
                             logger.debug(f"Distraction detected: '{pattern}' matched page title '{page_title[:50]}'")
+                            self._write_debug_file(f"MATCH: '{pattern}' matched page title '{page_title_lower}'")
                             return True, pattern
                 else:
                     # App name matching: use simple substring match
@@ -406,6 +410,7 @@ class Blocklist:
         if patterns_to_remove:
             self._remove_invalid_patterns(patterns_to_remove)
         
+        self._write_debug_file(f"RESULT: No match found")
         return False, None
     
     def _extract_domain_name(self, domain_pattern: str) -> Optional[str]:
@@ -483,12 +488,17 @@ class Blocklist:
         if site_name in site_title_variations:
             for variation in site_title_variations[site_name]:
                 if variation in title:
+                    self._write_debug_file(f"SITE MATCH: '{variation}' found in '{title}'")
                     return True
         
         # Default: simple substring check for the site name
         # This catches cases where the site name appears in the title
         # e.g., "YouTube - Watching videos" contains "youtube"
-        return site_name in title
+        if site_name in title:
+            self._write_debug_file(f"SUBSTRING MATCH: '{site_name}' found in '{title}'")
+            return True
+        
+        return False
     
     def _match_domain(self, pattern: str, text: str) -> bool:
         """
