@@ -42,7 +42,9 @@ WINDOWS_ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
 # Icon styling
 ICON_BACKGROUND_COLOR = (255, 255, 255, 255)  # White background (RGBA)
 ICON_CORNER_RADIUS_RATIO = 0.22  # Corner radius as ratio of icon size (iOS-style)
-LOGO_PADDING_RATIO = 0.15  # Padding around logo as ratio of icon size
+LOGO_PADDING_RATIO = 0.12  # Padding around logo as ratio of icon size (reduced for clarity)
+SMALL_ICON_THRESHOLD = 48  # Icons smaller than this use reduced padding for clarity
+SMALL_ICON_PADDING_RATIO = 0.08  # Even less padding for small icons
 
 
 def create_rounded_rectangle_mask(size: int, radius: int) -> Image.Image:
@@ -74,7 +76,7 @@ def create_app_icon(logo_path: Path, size: int) -> Image.Image:
     The icon has:
     - Transparent corners (for rounded effect on Windows)
     - White rounded rectangle background
-    - Logo centered with padding
+    - Logo centered with padding (reduced for small icons for better clarity)
     
     Args:
         logo_path: Path to the logo image (should have transparency)
@@ -83,9 +85,13 @@ def create_app_icon(logo_path: Path, size: int) -> Image.Image:
     Returns:
         RGBA image ready for icon generation
     """
-    # Calculate dimensions
+    # Calculate dimensions - use less padding for small icons
     corner_radius = int(size * ICON_CORNER_RADIUS_RATIO)
-    padding = int(size * LOGO_PADDING_RATIO)
+    if size < SMALL_ICON_THRESHOLD:
+        # Small icons need less padding so the logo is more visible
+        padding = int(size * SMALL_ICON_PADDING_RATIO)
+    else:
+        padding = int(size * LOGO_PADDING_RATIO)
     logo_area_size = size - (padding * 2)
     
     # Create transparent canvas

@@ -228,6 +228,103 @@ def check_macos_accessibility_permission() -> bool:
     return _test_accessibility_with_applescript()
 
 
+def check_windows_screen_permission() -> bool:
+    """
+    Check if screen monitoring works on Windows.
+    
+    Windows doesn't require explicit permissions like macOS, but detection
+    can still fail due to various reasons (UAC, antivirus, sandbox, etc.).
+    This function tests if we can actually get window information.
+    
+    Returns:
+        True if screen monitoring works, False otherwise.
+    """
+    if sys.platform != "win32":
+        return True  # Non-Windows: assume authorized
+    
+    return _test_windows_screen_access()
+
+
+def _test_windows_screen_access() -> bool:
+    """
+    Test Windows screen access by attempting to get the foreground window.
+    
+    Uses only ctypes (standard library) to ensure no external dependencies.
+    This tests the same code path that the actual detection will use.
+    
+    Returns:
+        True if window detection succeeds, False otherwise.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        # Get user32.dll
+        user32 = ctypes.windll.user32
+        
+        # Get foreground window handle
+        hwnd = user32.GetForegroundWindow()
+        
+        if not hwnd:
+            logger.warning("Windows screen test: No foreground window found")
+            return False
+        
+        # Try to get window title (tests basic access)
+        length = user32.GetWindowTextLengthW(hwnd)
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        result = user32.GetWindowTextW(hwnd, buffer, length + 1)
+        
+        if result == 0 and length > 0:
+            # GetWindowTextW failed but there was supposed to be text
+            logger.warning("Windows screen test: Could not get window title")
+            return False
+        
+        # Try to get process ID (tests deeper access)
+        pid = wintypes.DWORD()
+        thread_id = user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        
+        if thread_id == 0:
+            logger.warning("Windows screen test: Could not get process ID")
+            return False
+        
+        # Try to get process name (tests process access)
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        
+        if handle:
+            try:
+                proc_buffer = ctypes.create_unicode_buffer(260)
+                size = wintypes.DWORD(260)
+                
+                if kernel32.QueryFullProcessImageNameW(handle, 0, proc_buffer, ctypes.byref(size)):
+                    process_name = proc_buffer.value.split("\\")[-1]
+                    logger.debug(f"Windows screen test passed: window='{buffer.value}', process='{process_name}'")
+                    return True
+                else:
+                    # Could get handle but not process name - still partial success
+                    logger.debug(f"Windows screen test: Got window '{buffer.value}' but not process name")
+                    return True
+            finally:
+                kernel32.CloseHandle(handle)
+        else:
+            # Could not open process - might be elevated process or security restriction
+            # But we still got the window title, so basic detection works
+            logger.debug(f"Windows screen test: Got window '{buffer.value}' but could not open process (may be elevated)")
+            return True
+            
+    except ImportError as e:
+        logger.error(f"Windows screen test: ctypes not available: {e}")
+        return False
+    except OSError as e:
+        logger.error(f"Windows screen test: OS error: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Windows screen test: Unexpected error: {e}")
+        return False
+
+
 def _test_accessibility_with_applescript() -> bool:
     """
     Test Accessibility/Automation permission by running a simple AppleScript.
@@ -1877,29 +1974,9 @@ class BrainDockGUI:
         """
         if sys.platform != 'win32':
             return
-            
-        icon_locations = []
         
-        # Try bundled icon first (PyInstaller), then development paths
-        if getattr(sys, 'frozen', False):
-            # PyInstaller bundle - icon should be in assets folder
-            icon_locations.append(Path(sys._MEIPASS) / 'assets' / 'icon.ico')
-            # Also try root of bundle
-            icon_locations.append(Path(sys._MEIPASS) / 'icon.ico')
-        else:
-            # Development mode - try build folder
-            icon_locations.append(config.BASE_DIR / 'build' / 'icon.ico')
-            # Also try assets folder in case it was copied there
-            icon_locations.append(config.BASE_DIR / 'assets' / 'icon.ico')
-        
-        icon_path = None
-        for loc in icon_locations:
-            if loc.exists():
-                icon_path = loc
-                break
-        
+        icon_path = self._get_windows_icon_path()
         if not icon_path:
-            logger.warning(f"Windows icon not found. Tried: {icon_locations}")
             return
         
         try:
@@ -1914,6 +1991,56 @@ class BrainDockGUI:
                 logger.info(f"Set Windows icon (fallback) from: {icon_path}")
             except Exception as e2:
                 logger.error(f"Failed to set Windows icon: {e2}")
+    
+    def _get_windows_icon_path(self) -> Optional[Path]:
+        """
+        Get the path to the Windows icon file.
+        
+        Returns:
+            Path to icon.ico if found, None otherwise
+        """
+        icon_locations = []
+        
+        # Try bundled icon first (PyInstaller), then development paths
+        if getattr(sys, 'frozen', False):
+            # PyInstaller bundle - icon should be in assets folder
+            icon_locations.append(Path(sys._MEIPASS) / 'assets' / 'icon.ico')
+            # Also try root of bundle
+            icon_locations.append(Path(sys._MEIPASS) / 'icon.ico')
+        else:
+            # Development mode - try build folder
+            icon_locations.append(config.BASE_DIR / 'build' / 'icon.ico')
+            # Also try assets folder in case it was copied there
+            icon_locations.append(config.BASE_DIR / 'assets' / 'icon.ico')
+        
+        for loc in icon_locations:
+            if loc.exists():
+                return loc
+        
+        logger.warning(f"Windows icon not found. Tried: {icon_locations}")
+        return None
+    
+    def _set_toplevel_icon(self, window):
+        """
+        Set the icon for a Toplevel/CTkToplevel window on Windows.
+        
+        On Windows, each Toplevel window needs its icon set explicitly,
+        otherwise it shows the default Python/Tk icon.
+        
+        Args:
+            window: The Toplevel or CTkToplevel window
+        """
+        if sys.platform != 'win32':
+            return
+        
+        icon_path = self._get_windows_icon_path()
+        if not icon_path:
+            return
+        
+        try:
+            window.iconbitmap(str(icon_path))
+        except Exception as e:
+            logger.debug(f"Could not set toplevel icon: {e}")
     
     def _create_fonts(self, scale: float = None):
         """
@@ -2701,6 +2828,9 @@ class BrainDockGUI:
         settings_window.title("Screen Settings")
         settings_window.configure(fg_color=COLORS["bg_primary"])
         
+        # Set window icon for Windows (each Toplevel needs this explicitly)
+        self._set_toplevel_icon(settings_window)
+        
         # Force window to initialize before setting geometry (required for Windows rendering)
         settings_window.update_idletasks()
         
@@ -2942,9 +3072,6 @@ class BrainDockGUI:
         self.custom_urls_text.bind("<KeyRelease>", lambda e: self._validate_urls_realtime())
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
-        # Force content to render (required for Windows - CTkScrollableFrame needs update)
-        settings_window.update()
-        
         # AI Fallback option
         ai_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
         ai_frame.pack(fill=tk.X, pady=(15, 15))
@@ -2969,6 +3096,24 @@ class BrainDockGUI:
             text_color=COLORS["accent_warm"]
         )
         ai_help.pack(anchor="w", padx=(24, 0))
+        
+        # Force scrollable frame to render on Windows
+        # Windows requires explicit scroll region configuration for CTkScrollableFrame
+        def _refresh_scrollable_frame():
+            """Refresh scrollable frame content - required for Windows rendering."""
+            try:
+                settings_window.update_idletasks()
+                # Force the internal canvas to recalculate scroll region
+                if hasattr(scrollable_frame, '_parent_canvas'):
+                    canvas = scrollable_frame._parent_canvas
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                settings_window.update()
+            except Exception:
+                pass  # Window may be closing
+        
+        # Defer refresh to after window is fully mapped (critical for Windows)
+        settings_window.after(50, _refresh_scrollable_frame)
+        settings_window.after(150, _refresh_scrollable_frame)  # Second refresh for reliability
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -3008,6 +3153,9 @@ class BrainDockGUI:
         sites_popup = ctk.CTkToplevel(self.root)
         sites_popup.title(f"{cat_data['name']} Sites")
         sites_popup.configure(fg_color=COLORS["bg_primary"])
+        
+        # Set window icon for Windows (each Toplevel needs this explicitly)
+        self._set_toplevel_icon(sites_popup)
         
         # Calculate scaled popup size based on screen
         popup_width, popup_height = self.scaling_manager.get_popup_size(320, 320)
@@ -4042,6 +4190,9 @@ class BrainDockGUI:
         tutorial_window.title("How to Use BrainDock")
         tutorial_window.configure(fg_color=COLORS["bg_primary"])
         
+        # Set window icon for Windows (each Toplevel needs this explicitly)
+        self._set_toplevel_icon(tutorial_window)
+        
         # Force window to initialize before setting geometry (required for Windows rendering)
         tutorial_window.update_idletasks()
         
@@ -4242,8 +4393,23 @@ class BrainDockGUI:
         # Bind content frame configure event to update wraplength
         content_frame.bind("<Configure>", _update_desc_wraplength)
         
-        # Force content to render (required for Windows - CTkScrollableFrame needs update)
-        tutorial_window.update()
+        # Force scrollable frame to render on Windows
+        # Windows requires explicit scroll region configuration for CTkScrollableFrame
+        def _refresh_scrollable_frame():
+            """Refresh scrollable frame content - required for Windows rendering."""
+            try:
+                tutorial_window.update_idletasks()
+                # Force the internal canvas to recalculate scroll region
+                if hasattr(scrollable_frame, '_parent_canvas'):
+                    canvas = scrollable_frame._parent_canvas
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                tutorial_window.update()
+            except Exception:
+                pass  # Window may be closing
+        
+        # Defer refresh to after window is fully mapped (critical for Windows)
+        tutorial_window.after(50, _refresh_scrollable_frame)
+        tutorial_window.after(150, _refresh_scrollable_frame)  # Second refresh for reliability
         
         logger.debug("Tutorial popup opened")
     
@@ -4507,6 +4673,9 @@ class BrainDockGUI:
         dialog.title("Unlock More Time")
         dialog.configure(fg_color=COLORS["bg_primary"])
         dialog.resizable(False, False)
+        
+        # Set window icon for Windows (each Toplevel needs this explicitly)
+        self._set_toplevel_icon(dialog)
         
         # Size and position - scale based on screen and center
         dialog_width, dialog_height = self.scaling_manager.get_popup_size(350, 200)
@@ -4827,31 +4996,55 @@ class BrainDockGUI:
             # Windows: Skip pre-check - let detection thread handle camera errors
             # This avoids blocking main UI thread and double-opening camera
 
-        # Pre-check screen (Accessibility) permission for screen modes
+        # Pre-check screen permission for screen modes
         needs_screen = self.monitoring_mode in (config.MODE_SCREEN_ONLY, config.MODE_BOTH)
-        if needs_screen and sys.platform == "darwin":
-            logger.info("Checking Accessibility permission for screen monitoring...")
-            has_permission = check_macos_accessibility_permission()
-            logger.info(f"Accessibility permission check result: {has_permission}")
+        if needs_screen:
+            if sys.platform == "darwin":
+                # macOS: Check Accessibility/Automation permissions
+                logger.info("Checking Accessibility permission for screen monitoring...")
+                has_permission = check_macos_accessibility_permission()
+                logger.info(f"Accessibility permission check result: {has_permission}")
+                
+                if not has_permission:
+                    # Permission not granted - show dialog
+                    logger.warning("Accessibility/Automation permission not granted, showing dialog")
+                    result = messagebox.askyesno(
+                        "Screen Monitoring Permission Required",
+                        "Screen monitoring requires these permissions:\n\n"
+                        "1. ACCESSIBILITY:\n"
+                        "   Privacy & Security → Accessibility\n"
+                        "   Add BrainDock and enable checkbox\n\n"
+                        "2. AUTOMATION (System Events):\n"
+                        "   Privacy & Security → Automation\n"
+                        "   Enable 'System Events' under BrainDock\n\n"
+                        "After enabling both, RESTART BrainDock.\n\n"
+                        "Would you like to open System Settings?"
+                    )
+                    if result:
+                        open_macos_accessibility_settings()
+                    return
             
-            if not has_permission:
-                # Permission not granted - show dialog
-                logger.warning("Accessibility/Automation permission not granted, showing dialog")
-                result = messagebox.askyesno(
-                    "Screen Monitoring Permission Required",
-                    "Screen monitoring requires these permissions:\n\n"
-                    "1. ACCESSIBILITY:\n"
-                    "   Privacy & Security → Accessibility\n"
-                    "   Add BrainDock and enable checkbox\n\n"
-                    "2. AUTOMATION (System Events):\n"
-                    "   Privacy & Security → Automation\n"
-                    "   Enable 'System Events' under BrainDock\n\n"
-                    "After enabling both, RESTART BrainDock.\n\n"
-                    "Would you like to open System Settings?"
-                )
-                if result:
-                    open_macos_accessibility_settings()
-                return
+            elif sys.platform == "win32":
+                # Windows: Test if screen access works
+                logger.info("Checking screen monitoring access on Windows...")
+                has_permission = check_windows_screen_permission()
+                logger.info(f"Windows screen access check result: {has_permission}")
+                
+                if not has_permission:
+                    # Screen access failed - show helpful dialog
+                    logger.warning("Windows screen access failed, showing dialog")
+                    messagebox.showerror(
+                        "Screen Monitoring Issue",
+                        "Screen monitoring cannot access window information.\n\n"
+                        "Possible solutions:\n\n"
+                        "1. Try running BrainDock as Administrator\n"
+                        "   (Right-click → Run as administrator)\n\n"
+                        "2. Check if antivirus is blocking the app\n\n"
+                        "3. If running in a virtual machine,\n"
+                        "   try running on the host system\n\n"
+                        "For now, try using Camera Only mode."
+                    )
+                    return
 
         # Initialize session (but don't start yet - wait for first detection)
         self.session = Session()
@@ -5331,9 +5524,21 @@ class BrainDockGUI:
             
             if result:
                 open_macos_accessibility_settings()
+        elif sys.platform == "win32":
+            messagebox.showerror(
+                "Screen Monitoring Issue",
+                "Screen monitoring cannot access window information.\n\n"
+                "Possible solutions:\n\n"
+                "1. Try running BrainDock as Administrator\n"
+                "   (Right-click → Run as administrator)\n\n"
+                "2. Check if antivirus is blocking the app\n\n"
+                "3. If running in a virtual machine,\n"
+                "   try running on the host system\n\n"
+                "For now, try using Camera Only mode."
+            )
         else:
             messagebox.showerror(
-                "Screen Monitoring Permission Required",
+                "Screen Monitoring Issue",
                 f"Screen monitoring cannot access window information.\n\n{instructions}"
             )
     

@@ -33,6 +33,40 @@ from gui.font_loader import load_bundled_fonts
 
 logger = logging.getLogger(__name__)
 
+
+def set_windows_toplevel_icon(window) -> None:
+    """
+    Set the icon for a Toplevel window on Windows.
+    
+    On Windows, each Toplevel window needs its icon set explicitly,
+    otherwise it shows the default Python/Tk icon.
+    
+    Args:
+        window: The Toplevel or CTkToplevel window
+    """
+    if sys.platform != 'win32':
+        return
+    
+    icon_locations = []
+    
+    # Try bundled icon first (PyInstaller), then development paths
+    if getattr(sys, 'frozen', False):
+        icon_locations.append(Path(sys._MEIPASS) / 'assets' / 'icon.ico')
+        icon_locations.append(Path(sys._MEIPASS) / 'icon.ico')
+    else:
+        icon_locations.append(config.BASE_DIR / 'build' / 'icon.ico')
+        icon_locations.append(config.BASE_DIR / 'assets' / 'icon.ico')
+    
+    for loc in icon_locations:
+        if loc.exists():
+            try:
+                window.iconbitmap(str(loc))
+                return
+            except Exception as e:
+                logger.debug(f"Could not set toplevel icon: {e}")
+                break
+
+
 # PIL for logo image support
 try:
     from PIL import Image, ImageTk
@@ -639,10 +673,24 @@ class PaymentScreen:
         )
         self.card_bg.pack()
         
-        # Inner Frame for widgets
+        # Outer padding frame - fills the card with padding margins
         inner_padding = self._scale_padding(30)
-        self.inner_frame = ctk.CTkFrame(self.card_bg, fg_color=COLORS["surface"])
-        self.inner_frame.pack(fill="both", expand=True, padx=inner_padding, pady=inner_padding)
+        self._card_padding_frame = ctk.CTkFrame(self.card_bg, fg_color=COLORS["surface"])
+        self._card_padding_frame.pack(fill="both", expand=True, padx=inner_padding, pady=inner_padding)
+        
+        # Calculate content width (card width minus padding on both sides)
+        # This gives inner_frame a fixed width for content that uses fill="x"
+        content_width = self._scale_dimension(self._card_max_width - 60, min_value=320)
+        
+        # Inner Frame (content wrapper) - centered within the padding frame
+        # This ensures content is vertically centered, distributing any extra space evenly
+        # above and below (handles platform-specific font rendering differences)
+        self.inner_frame = ctk.CTkFrame(
+            self._card_padding_frame, 
+            fg_color=COLORS["surface"],
+            width=content_width
+        )
+        self.inner_frame.place(relx=0.5, rely=0.5, anchor="center")
         
         # Scaled padding values
         title_top_pad = self._scale_padding(10)
@@ -1094,6 +1142,9 @@ class PaymentScreen:
         dialog.geometry("500x220")
         dialog.transient(self.root)
         dialog.grab_set()
+        
+        # Set window icon for Windows (each Toplevel needs this explicitly)
+        set_windows_toplevel_icon(dialog)
         
         # Center the dialog
         dialog.update_idletasks()

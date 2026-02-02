@@ -185,7 +185,10 @@ class WindowDetector:
     
     def _get_active_window_windows(self) -> Optional[WindowInfo]:
         """
-        Get active window info on Windows using pywin32/ctypes.
+        Get active window info on Windows using ctypes (standard library).
+        
+        Uses only ctypes for basic detection (no external dependencies).
+        pywinauto is optional and only used for browser URL extraction.
         
         Returns:
             WindowInfo or None if detection fails.
@@ -199,6 +202,8 @@ class WindowDetector:
             hwnd = user32.GetForegroundWindow()
             
             if not hwnd:
+                logger.debug("No foreground window found")
+                self._has_permission = False
                 return None
             
             # Get window title
@@ -212,6 +217,9 @@ class WindowDetector:
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             
             app_name = self._get_process_name_windows(pid.value)
+            
+            # Successfully got window info - mark permission as granted
+            self._has_permission = True
             
             # Check if it's a Chromium-based browser (Chrome, Edge, etc.)
             # The UI Automation method works for all Chromium browsers
@@ -229,11 +237,18 @@ class WindowDetector:
                 is_browser=is_browser
             )
             
-        except ImportError:
-            logger.warning("pywin32 or ctypes not available on Windows")
+        except ImportError as e:
+            logger.warning(f"ctypes not available on Windows: {e}")
+            self._has_permission = False
+            return None
+        except OSError as e:
+            # OS-level error (e.g., access denied)
+            logger.warning(f"OS error in Windows window detection: {e}")
+            self._has_permission = False
             return None
         except Exception as e:
             logger.error(f"Error in Windows window detection: {e}")
+            self._has_permission = False
             return None
     
     def _get_process_name_windows(self, pid: int) -> str:
@@ -378,8 +393,14 @@ class WindowDetector:
             )
         elif self.platform == "win32":
             return (
-                "Screen monitoring should work automatically on Windows.\n"
-                "If you're having issues, try running as Administrator."
+                "Screen monitoring cannot access window information.\n\n"
+                "Possible solutions:\n"
+                "1. Run BrainDock as Administrator\n"
+                "   (Right-click → Run as administrator)\n\n"
+                "2. Check if antivirus is blocking the app\n\n"
+                "3. If running in a virtual machine,\n"
+                "   try running on the host system\n\n"
+                "For now, try using Camera Only mode."
             )
         else:
             return f"Screen monitoring is not supported on {self.platform}"
