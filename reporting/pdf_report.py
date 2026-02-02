@@ -630,7 +630,7 @@ def _draw_focus_gauge(focus_pct: float) -> Drawing:
 def _create_focus_legend_table() -> Table:
     """
     Create a legend table showing the focus level zones with colors, percentages and labels.
-    Sized to match the gauge proportionally. Compact to ensure page 1 fit.
+    Sized to match the gauge proportionally.
     
     Returns:
         ReportLab Table object containing the legend
@@ -646,16 +646,16 @@ def _create_focus_legend_table() -> Table:
     # Build legend table data
     legend_data = []
     for range_text, label, color in zones:
-        # Create a small colored box using a mini-table (compact size)
-        color_cell = Table([['']], colWidths=[12], rowHeights=[12])
+        # Create a small colored box using a mini-table (slightly bigger)
+        color_cell = Table([['']], colWidths=[14], rowHeights=[14])
         color_cell.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, 0), color),
             ('BOX', (0, 0), (0, 0), 0.5, colors.HexColor('#333333')),
         ]))
         legend_data.append([color_cell, range_text, label])
     
-    # Create the legend table (compact to fit page 1)
-    legend_table = Table(legend_data, colWidths=[0.25 * inch, 0.7 * inch, 0.85 * inch])
+    # Create the legend table (slightly bigger)
+    legend_table = Table(legend_data, colWidths=[0.3 * inch, 0.8 * inch, 0.95 * inch])
     
     # Build table style with color-coded text
     legend_style = [
@@ -665,11 +665,11 @@ def _create_focus_legend_table() -> Table:
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('FONTNAME', (1, 0), (1, -1), 'Times-Bold'),
         ('FONTNAME', (2, 0), (2, -1), 'Times-Roman'),
-        ('FONTSIZE', (1, 0), (-1, -1), 9),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('LEFTPADDING', (1, 0), (1, -1), 6),
-        ('LEFTPADDING', (2, 0), (2, -1), 3),
+        ('FONTSIZE', (1, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (1, 0), (1, -1), 8),
+        ('LEFTPADDING', (2, 0), (2, -1), 4),
         ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#E0E6ED')),
         ('LINEBELOW', (0, 0), (-1, -2), 0.5, colors.HexColor('#E0E6ED')),
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFB')),
@@ -694,7 +694,6 @@ def _create_gauge_with_legend(focus_pct: float) -> Table:
     """
     Create a centered table containing the focus gauge and its legend side by side.
     The flat base of the gauge semicircle aligns with the bottom of the legend table.
-    Compact layout to ensure page 1 fit.
     
     Args:
         focus_pct: Focus percentage (0-100)
@@ -708,8 +707,8 @@ def _create_gauge_with_legend(focus_pct: float) -> Table:
     # Create table with gauge on left, spacer, legend on right
     data = [[gauge, '', legend]]
     
-    # Table with appropriate column widths (gauge, gap, legend) - compact spacing
-    table = Table(data, colWidths=[2.4 * inch, 0.4 * inch, 1.85 * inch])
+    # Table with appropriate column widths (gauge, gap, legend)
+    table = Table(data, colWidths=[2.8 * inch, 0.5 * inch, 2.1 * inch])
     table.setStyle(TableStyle([
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),  # Align at bottom - gauge base matches legend bottom
@@ -843,23 +842,23 @@ def _create_focus_card(
     gauge_with_legend = _create_gauge_with_legend(focus_pct)
     focus_statement = _create_focus_statement_paragraph(focus_pct, stats)
     
-    # Build content list (gauge, spacer, centered statement) - compact spacing
+    # Build content list (gauge, spacer, centered statement)
     content = [
         gauge_with_legend,
-        Spacer(1, 0.15 * inch),  # Reduced spacer for compact layout
+        Spacer(1, 0.35 * inch),  # More space to push statement down for better centering
         focus_statement,
     ]
     
-    # Create the rounded box container (compact to ensure page 1 fit)
+    # Create the rounded box container (slightly wider and taller)
     card = RoundedBoxFlowable(
         content=content,
-        width=6.2 * inch,
+        width=6.5 * inch,
         bg_color='#F4F8FB',      # Light blue-gray background
         border_color='#A8C0D4',  # More visible border (darker blue-gray)
-        border_width=2.5,        # Slightly thinner border
-        corner_radius=12,
-        padding=15,              # Reduced padding for compact fit
-        padding_bottom=18        # Reduced bottom padding
+        border_width=3,          # Noticeable border thickness
+        corner_radius=15,
+        padding=25,              # Increased padding for larger card
+        padding_bottom=30        # More bottom padding for vertical centering
     )
     
     return card
@@ -907,13 +906,14 @@ def generate_report(
     filepath = output_dir / filename
     
     # Create PDF document with custom template
+    # Reduced bottom margin to ensure all content fits on page 1
     doc = SimpleDocTemplate(
         str(filepath),
         pagesize=letter,
         rightMargin=60,
         leftMargin=60,
         topMargin=45,  # Reduced from 60 to move content up
-        bottomMargin=60
+        bottomMargin=30  # Reduced from 60 to give more space for page 1 content
     )
     
     # Build the story (content)
@@ -1151,10 +1151,9 @@ def generate_report(
     
     story.append(stats_table)
     
-    # Add focus visualization card (gauge, legend, statement in a rounded container)
+    # Add focus visualization card (gauge, legend, statement, emoji in a rounded container)
     # Pass stats to customize the statement based on dominant distraction type
-    # Reduced spacer to ensure everything fits on page 1
-    story.append(Spacer(1, 0.2 * inch))
+    story.append(Spacer(1, 0.4 * inch))
     focus_card = _create_focus_card(focus_pct, stats)
     
     # Center the focus card using a wrapper table

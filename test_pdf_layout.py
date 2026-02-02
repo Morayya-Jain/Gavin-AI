@@ -12,8 +12,26 @@ from datetime import datetime, timedelta
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from reporting import pdf_report
 from reporting.pdf_report import generate_report
 import config
+
+# Monkey-patch to force a very long focus statement
+_original_get_random_focus_statement = pdf_report._get_random_focus_statement
+
+def _long_focus_statement(focus_pct, stats=None):
+    """Return an extra-long focus statement to test layout overflow."""
+    category_key, category_label, color = pdf_report._get_focus_category(focus_pct)
+    pct_str = f"{int(focus_pct)}" if focus_pct == int(focus_pct) else f"{focus_pct:.1f}"
+    
+    # Very long statement that will definitely wrap to multiple lines
+    statement = (
+        f"With a {category_label} focus rate of {pct_str}%, you demonstrated remarkable dedication "
+        f"to staying on task throughout your study session today, keep up the excellent work!"
+    )
+    return (statement, category_label, color)
+
+pdf_report._get_random_focus_statement = _long_focus_statement
 
 def main():
     """Generate a test PDF with maximum content to verify page 1 fit."""
