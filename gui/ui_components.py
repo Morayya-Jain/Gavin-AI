@@ -6,9 +6,12 @@ BrainDock application, built on CustomTkinter for consistent cross-platform
 appearance.
 """
 import sys
+import logging
 from typing import Dict, Tuple, Optional, Callable
 import customtkinter as ctk
 from customtkinter import CTkFont
+
+logger = logging.getLogger(__name__)
 
 # Import font loader for bundled fonts
 try:
@@ -28,6 +31,101 @@ except ImportError:
     FONT_SERIF = "Georgia"
     FONT_SANS_FALLBACK = "Helvetica"
     FONT_SERIF_FALLBACK = "Georgia"
+
+
+# --- DPI Scaling System ---
+
+# Cache the DPI scale factor (computed once at startup)
+_dpi_scale_factor: Optional[float] = None
+
+
+def get_system_dpi_scale() -> float:
+    """
+    Get the system DPI scale factor for the current platform.
+    
+    On Windows, this detects the display scaling percentage (100%, 125%, 150%, 200%, etc.)
+    and returns it as a multiplier (1.0, 1.25, 1.5, 2.0, etc.).
+    
+    On macOS, returns 1.0 since macOS handles DPI scaling differently and we
+    disable CustomTkinter's automatic DPI awareness.
+    
+    Returns:
+        DPI scale factor (1.0 = 100% / standard DPI).
+    """
+    global _dpi_scale_factor
+    
+    if _dpi_scale_factor is not None:
+        return _dpi_scale_factor
+    
+    if sys.platform == "win32":
+        _dpi_scale_factor = _get_windows_dpi_scale()
+    else:
+        # macOS and Linux: return 1.0 (macOS handles this via Retina, Linux varies)
+        _dpi_scale_factor = 1.0
+    
+    logger.info(f"System DPI scale factor: {_dpi_scale_factor}")
+    return _dpi_scale_factor
+
+
+def _get_windows_dpi_scale() -> float:
+    """
+    Get the Windows display scaling factor using the Win32 API.
+    
+    Uses GetDpiForSystem() on Windows 10+ or falls back to GetDeviceCaps().
+    
+    Returns:
+        DPI scale factor (e.g., 2.0 for 200% scaling).
+    """
+    try:
+        from ctypes import windll, c_int
+        
+        # Try the modern API first (Windows 10 1607+)
+        try:
+            # SetProcessDpiAwarenessContext for per-monitor DPI awareness
+            # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+            windll.user32.SetProcessDpiAwarenessContext(c_int(-4))
+        except (AttributeError, OSError):
+            # Fall back to older API
+            try:
+                # PROCESS_PER_MONITOR_DPI_AWARE = 2
+                windll.shcore.SetProcessDpiAwareness(2)
+            except (AttributeError, OSError):
+                pass
+        
+        # Get DPI for the system (primary monitor)
+        try:
+            dpi = windll.user32.GetDpiForSystem()
+        except AttributeError:
+            # Fallback for older Windows: use GetDeviceCaps
+            hdc = windll.user32.GetDC(0)
+            dpi = windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX = 88
+            windll.user32.ReleaseDC(0, hdc)
+        
+        # Standard DPI is 96, so 192 DPI = 200% scaling
+        scale = dpi / 96.0
+        logger.debug(f"Windows DPI: {dpi}, scale factor: {scale}")
+        return scale
+        
+    except Exception as e:
+        logger.warning(f"Failed to detect Windows DPI scale: {e}")
+        return 1.0
+
+
+def get_dpi_scaled_font_size(base_size: int) -> int:
+    """
+    Apply DPI scaling to a font size.
+    
+    On Windows with display scaling (e.g., 200%), this multiplies the base
+    font size to ensure text is readable at the correct physical size.
+    
+    Args:
+        base_size: The base font size in points.
+        
+    Returns:
+        DPI-scaled font size.
+    """
+    dpi_scale = get_system_dpi_scale()
+    return int(base_size * dpi_scale)
 
 
 # --- Scaling System ---
@@ -365,14 +463,36 @@ COLORS = {
 # Font tuples for backward compatibility
 # These use bundled fonts (Inter/Lora) when available
 def _get_font_tuple(family_type: str, size: int, weight: str = "normal") -> tuple:
-    """Get a font tuple with the appropriate family."""
+    """Get a font tuple with the appropriate family, applying DPI scaling."""
     family = get_font_serif() if family_type == "serif" else get_font_sans()
+    # Apply DPI scaling for Windows high-DPI displays
+    dpi_scaled_size = get_dpi_scaled_font_size(size)
     if weight == "bold":
-        return (family, size, "bold")
-    return (family, size)
+        return (family, dpi_scaled_size, "bold")
+    return (family, dpi_scaled_size)
 
 
-# FONTS dict for backward compatibility with existing code
+def get_fonts_dict() -> dict:
+    """
+    Get FONTS dict with DPI-scaled sizes.
+    
+    Returns a dict of font tuples with sizes adjusted for system DPI.
+    """
+    dpi_scale = get_system_dpi_scale()
+    return {
+        "display": (get_font_serif(), int(34 * dpi_scale), "bold"),
+        "heading": (get_font_serif(), int(26 * dpi_scale), "bold"),
+        "subheading": (get_font_serif(), int(20 * dpi_scale)),
+        "body": (get_font_sans(), int(16 * dpi_scale)),
+        "body_bold": (get_font_sans(), int(16 * dpi_scale), "bold"),
+        "caption": (get_font_sans(), int(13 * dpi_scale), "bold"),
+        "small": (get_font_sans(), int(14 * dpi_scale)),
+        "input": (get_font_sans(), int(16 * dpi_scale)),
+    }
+
+
+# FONTS dict for backward compatibility - uses base sizes (DPI scaling applied dynamically)
+# NOTE: For DPI-aware fonts, use get_fonts_dict() or get_ctk_font() instead
 FONTS = {
     "display": (get_font_serif(), 34, "bold"),
     "heading": (get_font_serif(), 26, "bold"),
@@ -389,22 +509,32 @@ def get_ctk_font(font_key: str, scale: float = 1.0) -> CTkFont:
     """
     Get a CTkFont object for the given font key.
     
+    Applies both the provided scale factor and system DPI scaling
+    for proper font rendering on high-DPI displays.
+    
     Args:
         font_key: Key from FONT_BOUNDS.
         scale: Scale factor to apply (default 1.0).
     
     Returns:
-        CTkFont object.
+        CTkFont object with DPI-scaled size.
     """
     if font_key not in FONT_BOUNDS:
         font_key = "body"
     
     base_size, min_size, max_size = FONT_BOUNDS[font_key]
-    size = int(max(min_size, min(max_size, base_size * scale)))
+    # Apply window-based scaling first
+    scaled_size = int(base_size * scale)
+    # Apply bounds
+    bounded_size = max(min_size, min(max_size, scaled_size))
+    # Apply DPI scaling for Windows high-DPI displays
+    dpi_scale = get_system_dpi_scale()
+    final_size = int(bounded_size * dpi_scale)
+    
     family = get_font_serif() if font_key in SERIF_FONTS else get_font_sans()
     weight = "bold" if font_key in BOLD_FONTS else "normal"
     
-    return CTkFont(family=family, size=size, weight=weight)
+    return CTkFont(family=family, size=final_size, weight=weight)
 
 
 # --- CustomTkinter Widget Wrappers ---
@@ -1139,3 +1269,185 @@ def setup_natural_scroll(scrollable_frame: ctk.CTkScrollableFrame, window) -> Na
         NaturalScroller instance (keep reference to prevent garbage collection).
     """
     return NaturalScroller(scrollable_frame, window)
+
+
+# --- Windows-Compatible Scrollable Frame ---
+
+def _is_windows_bundled() -> bool:
+    """Check if running as a PyInstaller bundle on Windows."""
+    return (
+        sys.platform == 'win32' and 
+        getattr(sys, 'frozen', False) and 
+        hasattr(sys, '_MEIPASS')
+    )
+
+
+class WindowsCompatibleScrollableFrame(ctk.CTkFrame):
+    """
+    A scrollable frame that works reliably on Windows bundled apps.
+    
+    On Windows bundled apps, CTkScrollableFrame has rendering issues where
+    content doesn't display. This class uses a plain tkinter Canvas with
+    Scrollbar as a fallback on Windows, while using CTkScrollableFrame
+    on macOS/Linux for better appearance.
+    
+    Usage is similar to CTkScrollableFrame - add widgets directly to this frame.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        fg_color: str = COLORS["bg_primary"],
+        scrollbar_button_color: str = COLORS["text_secondary"],
+        scrollbar_button_hover_color: str = COLORS["accent"],
+        **kwargs
+    ):
+        """
+        Initialize the scrollable frame.
+        
+        Args:
+            parent: Parent widget.
+            fg_color: Background color.
+            scrollbar_button_color: Scrollbar thumb color.
+            scrollbar_button_hover_color: Scrollbar thumb hover color.
+        """
+        super().__init__(parent, fg_color=fg_color, **kwargs)
+        
+        self._fg_color = fg_color
+        self._use_fallback = _is_windows_bundled()
+        
+        if self._use_fallback:
+            # Windows bundled app: use plain tkinter Canvas + Scrollbar
+            self._setup_tk_scrollable(fg_color)
+        else:
+            # macOS/Linux or non-bundled: use CTkScrollableFrame internally
+            self._setup_ctk_scrollable(fg_color, scrollbar_button_color, scrollbar_button_hover_color)
+    
+    def _setup_tk_scrollable(self, bg_color: str):
+        """Set up plain tkinter Canvas with Scrollbar (Windows fallback)."""
+        import tkinter as tk
+        
+        # Create canvas and scrollbar
+        self._canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)
+        self._scrollbar = tk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        
+        # Create inner frame for content
+        self._inner_frame = ctk.CTkFrame(self._canvas, fg_color=bg_color)
+        
+        # Create window in canvas for the frame
+        self._canvas_window = self._canvas.create_window((0, 0), window=self._inner_frame, anchor="nw")
+        
+        # Configure scrollbar
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        
+        # Pack scrollbar and canvas
+        self._scrollbar.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
+        
+        # Bind events for scrolling and resizing
+        self._inner_frame.bind("<Configure>", self._on_frame_configure)
+        self._canvas.bind("<Configure>", self._on_canvas_configure)
+        
+        # Bind mousewheel scrolling
+        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        
+        # Store reference to content frame for widget placement
+        self._content_frame = self._inner_frame
+    
+    def _setup_ctk_scrollable(self, bg_color: str, scrollbar_color: str, scrollbar_hover: str):
+        """Set up CTkScrollableFrame (macOS/Linux)."""
+        self._scrollable = ctk.CTkScrollableFrame(
+            self,
+            fg_color=bg_color,
+            scrollbar_button_color=scrollbar_color,
+            scrollbar_button_hover_color=scrollbar_hover
+        )
+        self._scrollable.pack(fill="both", expand=True)
+        
+        # Content frame is the scrollable frame itself
+        self._content_frame = self._scrollable
+        self._canvas = None
+    
+    def _on_frame_configure(self, event):
+        """Update scroll region when inner frame size changes."""
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+    
+    def _on_canvas_configure(self, event):
+        """Resize inner frame width to match canvas."""
+        self._canvas.itemconfig(self._canvas_window, width=event.width)
+    
+    def _on_mousewheel(self, event):
+        """Handle mousewheel scrolling."""
+        if self._canvas:
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    
+    def get_content_frame(self) -> ctk.CTkFrame:
+        """
+        Get the frame where content should be added.
+        
+        Returns:
+            The content frame (CTkFrame) to add widgets to.
+        """
+        return self._content_frame
+    
+    def pack_widget(self, widget_class, **kwargs):
+        """
+        Create and pack a widget into the content frame.
+        
+        This is a convenience method that handles parent assignment automatically.
+        
+        Args:
+            widget_class: The widget class to instantiate.
+            **kwargs: Arguments passed to widget constructor and pack().
+        
+        Returns:
+            The created widget.
+        """
+        # Separate pack kwargs from widget kwargs
+        pack_kwargs = {}
+        widget_kwargs = {}
+        pack_keys = {'side', 'fill', 'expand', 'padx', 'pady', 'anchor', 'ipadx', 'ipady', 'before', 'after'}
+        
+        for key, value in kwargs.items():
+            if key in pack_keys:
+                pack_kwargs[key] = value
+            else:
+                widget_kwargs[key] = value
+        
+        # Create widget with content frame as parent
+        widget = widget_class(self._content_frame, **widget_kwargs)
+        widget.pack(**pack_kwargs)
+        
+        return widget
+
+
+def create_scrollable_frame(
+    parent,
+    fg_color: str = COLORS["bg_primary"],
+    scrollbar_button_color: str = COLORS["text_secondary"],
+    scrollbar_button_hover_color: str = COLORS["accent"],
+    **kwargs
+) -> Tuple[ctk.CTkFrame, ctk.CTkFrame]:
+    """
+    Create a scrollable frame that works on both Windows and macOS.
+    
+    On Windows bundled apps, this uses a plain tkinter Canvas fallback.
+    On macOS/Linux, it uses CTkScrollableFrame with natural scrolling.
+    
+    Args:
+        parent: Parent widget.
+        fg_color: Background color.
+        scrollbar_button_color: Scrollbar thumb color.
+        scrollbar_button_hover_color: Scrollbar thumb hover color.
+    
+    Returns:
+        Tuple of (outer_frame, content_frame) - add widgets to content_frame.
+    """
+    frame = WindowsCompatibleScrollableFrame(
+        parent,
+        fg_color=fg_color,
+        scrollbar_button_color=scrollbar_button_color,
+        scrollbar_button_hover_color=scrollbar_button_hover_color,
+        **kwargs
+    )
+    return frame, frame.get_content_frame()

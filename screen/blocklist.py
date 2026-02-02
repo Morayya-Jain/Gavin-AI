@@ -347,9 +347,10 @@ class Blocklist:
                         logger.debug(f"Distraction detected: '{pattern}' matched window title")
                         return True, pattern
                     
-                    # For browsers without URL: check if domain name appears in page title
+                    # For browsers: check if domain name appears in page title
+                    # This is a fallback when URL is not available or URL matching failed
                     # e.g., "youtube.com" -> check for "youtube" in page title
-                    if page_title_lower and not url_lower:
+                    if page_title_lower:
                         domain_name = self._extract_domain_name(pattern_lower)
                         if domain_name and self._match_site_in_title(domain_name, page_title_lower):
                             logger.debug(f"Distraction detected: '{pattern}' matched page title '{page_title[:50]}'")

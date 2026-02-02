@@ -608,7 +608,10 @@ from gui.ui_components import (
     FONT_BOUNDS,
     get_screen_scale_factor,
     normalize_tk_scaling,
-    setup_natural_scroll
+    setup_natural_scroll,
+    create_scrollable_frame,
+    get_system_dpi_scale,
+    get_dpi_scaled_font_size
 )
 
 # Base dimensions for scaling (larger default window) - keep for backward compat
@@ -656,6 +659,7 @@ def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     
     Uses bundled Inter font for consistent cross-platform appearance.
     Falls back to system fonts if bundled fonts aren't available.
+    Applies DPI scaling on Windows for high-DPI displays.
     
     Args:
         size: Font size in points
@@ -666,7 +670,9 @@ def get_system_font(size: int = 11, weight: str = "normal") -> tuple:
     """
     # Use bundled Inter font (loaded at startup)
     font_family = get_font_sans()  # Inter if loaded, Helvetica as fallback
-    return (font_family, size, weight)
+    # Apply DPI scaling for Windows high-DPI displays
+    dpi_scaled_size = get_dpi_scaled_font_size(size)
+    return (font_family, dpi_scaled_size, weight)
 
 
 class RoundedButton(tk.Canvas):
@@ -743,7 +749,7 @@ class RoundedButton(tk.Canvas):
 
         self.create_rounded_rect(x1, y1, x2, y2, r, fill=self.bg_color, outline=self.bg_color)
 
-        font_to_use = self.font_obj or (get_font_sans(), 14, "bold")
+        font_to_use = self.font_obj or (get_font_sans(), get_dpi_scaled_font_size(14), "bold")
         self.create_text(w // 2, h // 2 + offset, text=self.text_str, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -1125,7 +1131,7 @@ class Card(tk.Canvas):
         self.tag_lower("card_bg")
         
         if self.text:
-            font_to_use = self.font or (get_font_sans(), 12, "bold")
+            font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
             fill_color = self.text_color or COLORS["text_primary"]
             self.create_text(w // 2, h // 2, text=self.text, fill=fill_color, font=font_to_use, tags="card_text")
 
@@ -1182,7 +1188,7 @@ class Badge(tk.Canvas):
 
     def _calculate_text_width(self) -> int:
         """Calculate the width needed to display the current text."""
-        font_to_use = self.font or (get_font_sans(), 12, "bold")
+        font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
         
         # Create a temporary text item to measure width
         temp_id = self.create_text(0, 0, text=self.text, font=font_to_use)
@@ -1220,7 +1226,7 @@ class Badge(tk.Canvas):
         self.create_rounded_rect(3, 4, w - 1, h - 1, self.corner_radius, fill="#D8D8DC", outline="")
         # Main badge surface
         self.create_rounded_rect(0, 0, w - 4, h - 5, self.corner_radius, fill=self.bg_color, outline="")
-        font_to_use = self.font or (get_font_sans(), 12, "bold")
+        font_to_use = self.font or (get_font_sans(), get_dpi_scaled_font_size(12), "bold")
         self.create_text((w - 4) // 2, (h - 5) // 2, text=self.text, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
@@ -1454,8 +1460,9 @@ class NotificationPopup:
             pass
     
     def _get_font(self, size: int, weight: str = "normal") -> tuple:
-        """Get font tuple with fallback."""
-        return (self._get_font_family(), size, weight)
+        """Get font tuple with fallback, with DPI scaling for Windows."""
+        dpi_scaled_size = get_dpi_scaled_font_size(size)
+        return (self._get_font_family(), dpi_scaled_size, weight)
     
     def _create_ui(self):
         """Build the popup UI matching the reference design."""
@@ -2047,7 +2054,8 @@ class BrainDockGUI:
         Create custom fonts for the UI with scalable sizes.
         
         Uses bundled fonts (Inter for interface, Lora for display) for
-        consistent cross-platform appearance.
+        consistent cross-platform appearance. Applies DPI scaling on Windows
+        to ensure fonts are readable at high DPI settings (125%, 150%, 200%, etc.).
         
         Args:
             scale: Optional scale factor. If None, uses current_scale.
@@ -2059,11 +2067,20 @@ class BrainDockGUI:
         font_display = get_font_serif()   # Lora (replaces Georgia)
         font_interface = get_font_sans()  # Inter (replaces Helvetica)
         
-        # Helper to get scaled font size with bounds
+        # Get system DPI scale (1.0 on macOS, 1.25/1.5/2.0 etc. on Windows)
+        dpi_scale = get_system_dpi_scale()
+        
+        # Helper to get scaled font size with bounds, applying DPI scaling
         def get_scaled_size(font_key: str) -> int:
             base_size, min_size, max_size = FONT_BOUNDS.get(font_key, (14, 11, 18))
+            # Apply window-based scaling first
             scaled = int(base_size * scale)
-            return max(min_size, min(scaled, max_size))
+            # Apply DPI scaling for Windows high-DPI displays
+            dpi_adjusted = int(scaled * dpi_scale)
+            # Apply bounds (also scaled by DPI for consistency)
+            min_dpi = int(min_size * dpi_scale)
+            max_dpi = int(max_size * dpi_scale)
+            return max(min_dpi, min(dpi_adjusted, max_dpi))
         
         self.font_title = tkfont.Font(
             family=font_display, size=get_scaled_size("title"), weight="bold"
@@ -2831,6 +2848,11 @@ class BrainDockGUI:
         # Set window icon for Windows (each Toplevel needs this explicitly)
         self._set_toplevel_icon(settings_window)
         
+        # Windows-specific: withdraw window during content setup, then deiconify after
+        # This prevents rendering issues with CTkScrollableFrame on Windows
+        if sys.platform == "win32":
+            settings_window.withdraw()
+        
         # Force window to initialize before setting geometry (required for Windows rendering)
         settings_window.update_idletasks()
         
@@ -2894,24 +2916,24 @@ class BrainDockGUI:
         )
         cancel_btn.pack(side=tk.LEFT)
         
-        # --- Scrollable content area using CTkScrollableFrame ---
-        # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
-        # Note: On Windows, content must be added directly (no nested wrapper frame)
-        scrollable_frame = ctk.CTkScrollableFrame(
+        # --- Scrollable content area (Windows-compatible) ---
+        # Uses fallback Canvas+Scrollbar on Windows bundled apps where CTkScrollableFrame has issues
+        scrollable_outer, content_frame = create_scrollable_frame(
             main_container,
             fg_color=COLORS["bg_primary"],
             scrollbar_button_color=COLORS["text_secondary"],
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
-        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 10))
+        scrollable_outer.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 10))
         
-        # Set up natural scrolling (cross-platform, physics-based momentum)
-        natural_scroller = setup_natural_scroll(scrollable_frame, settings_window)
+        # Set up natural scrolling (only on macOS/Linux with CTkScrollableFrame)
+        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
+            natural_scroller = setup_natural_scroll(scrollable_outer._scrollable, settings_window)
         
-        # --- Content inside scrollable frame (added directly, no wrapper frame for Windows compatibility) ---
+        # --- Content inside scrollable frame ---
         # Title
         title = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Screen Settings",
             font=self._font_to_tuple(self.font_title),
             text_color=COLORS["accent_primary"]
@@ -2919,7 +2941,7 @@ class BrainDockGUI:
         title.pack(pady=(0, 3), padx=15)
         
         subtitle = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Select sites/apps categorised as distractions",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
@@ -2928,16 +2950,16 @@ class BrainDockGUI:
         
         # Quick Select section
         quick_sites_label = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Quick Select",
-            font=(get_font_sans(), 18, "bold"),
+            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
             text_color=COLORS["text_primary"]
         )
         quick_sites_label.pack(anchor="w", pady=(0, 10), padx=15)
         
         # Quick site toggles - two-column layout
         self.quick_site_vars = {}
-        quick_sites_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+        quick_sites_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
         quick_sites_frame.pack(fill=tk.X, pady=(0, 0), padx=15)
         
         # Configure two columns with equal weight
@@ -2967,7 +2989,7 @@ class BrainDockGUI:
                 quick_sites_frame,
                 text=site_data["name"],
                 variable=var,
-                font=(get_font_sans(), 16),
+                font=(get_font_sans(), get_dpi_scaled_font_size(16)),
                 text_color=COLORS["text_primary"],
                 fg_color=COLORS["accent_primary"],
                 hover_color=COLORS["text_secondary"],
@@ -2978,15 +3000,15 @@ class BrainDockGUI:
         
         # --- Custom URLs section ---
         urls_label = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Custom URLs/Domains",
-            font=(get_font_sans(), 18, "bold"),
+            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
             text_color=COLORS["text_primary"]
         )
         urls_label.pack(anchor="w", pady=(25, 5), padx=15)
         
         urls_help = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Add more website URLs as distractions (e.g., example.com)",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
@@ -2995,7 +3017,7 @@ class BrainDockGUI:
         
         # URLs text area
         self.custom_urls_text = ctk.CTkTextbox(
-            scrollable_frame,
+            content_frame,
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["bg_secondary"],
@@ -3009,7 +3031,7 @@ class BrainDockGUI:
         
         # URL validation status label
         self.url_validation_label = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
@@ -3023,15 +3045,15 @@ class BrainDockGUI:
         
         # --- Custom Apps section ---
         apps_label = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Custom App Names",
-            font=(get_font_sans(), 18, "bold"),
+            font=(get_font_sans(), get_dpi_scaled_font_size(18), "bold"),
             text_color=COLORS["text_primary"]
         )
         apps_label.pack(anchor="w", pady=(5, 5), padx=15)
         
         apps_help = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="Add more app names as distractions (e.g., Steam, Discord)",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
@@ -3040,7 +3062,7 @@ class BrainDockGUI:
         
         # Apps text area
         self.custom_apps_text = ctk.CTkTextbox(
-            scrollable_frame,
+            content_frame,
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_primary"],
             fg_color=COLORS["bg_secondary"],
@@ -3054,7 +3076,7 @@ class BrainDockGUI:
         
         # App validation status label
         self.app_validation_label = ctk.CTkLabel(
-            scrollable_frame,
+            content_frame,
             text="",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
@@ -3071,7 +3093,7 @@ class BrainDockGUI:
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
         # AI Fallback option
-        ai_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+        ai_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
         ai_frame.pack(fill=tk.X, pady=(15, 15), padx=15)
         
         self.ai_fallback_var = tk.BooleanVar(value=self.use_ai_fallback)
@@ -3095,23 +3117,12 @@ class BrainDockGUI:
         )
         ai_help.pack(anchor="w", padx=(24, 0))
         
-        # Force scrollable frame to render on Windows
-        # Windows requires explicit scroll region configuration for CTkScrollableFrame
-        def _refresh_scrollable_frame():
-            """Refresh scrollable frame content - required for Windows rendering."""
-            try:
-                settings_window.update_idletasks()
-                # Force the internal canvas to recalculate scroll region
-                if hasattr(scrollable_frame, '_parent_canvas'):
-                    canvas = scrollable_frame._parent_canvas
-                    canvas.configure(scrollregion=canvas.bbox("all"))
-                settings_window.update()
-            except Exception:
-                pass  # Window may be closing
-        
-        # Defer refresh to after window is fully mapped (critical for Windows)
-        settings_window.after(50, _refresh_scrollable_frame)
-        settings_window.after(150, _refresh_scrollable_frame)  # Second refresh for reliability
+        # Windows-specific: show window after content is added (was withdrawn earlier)
+        if sys.platform == "win32":
+            settings_window.update_idletasks()
+            settings_window.deiconify()
+            settings_window.lift()
+            settings_window.focus_force()
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -4191,6 +4202,11 @@ class BrainDockGUI:
         # Set window icon for Windows (each Toplevel needs this explicitly)
         self._set_toplevel_icon(tutorial_window)
         
+        # Windows-specific: withdraw window during content setup, then deiconify after
+        # This prevents rendering issues with CTkScrollableFrame on Windows
+        if sys.platform == "win32":
+            tutorial_window.withdraw()
+        
         # Force window to initialize before setting geometry (required for Windows rendering)
         tutorial_window.update_idletasks()
         
@@ -4253,20 +4269,19 @@ class BrainDockGUI:
         )
         subtitle.pack(fill=tk.X, pady=(8, 0))
         
-        # --- Scrollable content area using CTkScrollableFrame ---
-        # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
-        # Packed last to fill remaining space between header and footer
-        # Note: On Windows, content must be added directly (no nested wrapper frame)
-        scrollable_frame = ctk.CTkScrollableFrame(
+        # --- Scrollable content area (Windows-compatible) ---
+        # Uses fallback Canvas+Scrollbar on Windows bundled apps where CTkScrollableFrame has issues
+        scrollable_outer, content_frame = create_scrollable_frame(
             main_container,
             fg_color=COLORS["bg_primary"],
             scrollbar_button_color=COLORS["text_secondary"],
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
-        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=10)
+        scrollable_outer.pack(fill=tk.BOTH, expand=True, padx=10)
         
-        # Set up natural scrolling (cross-platform, physics-based momentum)
-        natural_scroller = setup_natural_scroll(scrollable_frame, tutorial_window)
+        # Set up natural scrolling (only on macOS/Linux with CTkScrollableFrame)
+        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
+            natural_scroller = setup_natural_scroll(scrollable_outer._scrollable, tutorial_window)
         
         # Tutorial sections data (icon, title, description)
         tutorial_sections = [
@@ -4333,9 +4348,9 @@ class BrainDockGUI:
         # Store description labels for dynamic resizing
         desc_labels = []
         
-        # Create tutorial sections (added directly to scrollable_frame for Windows compatibility)
+        # Create tutorial sections
         for i, (icon, icon_color, section_title, description) in enumerate(tutorial_sections):
-            section_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
+            section_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
             section_frame.pack(fill=tk.X, pady=(0, 25), padx=10)
             
             # Icon and title row
@@ -4378,33 +4393,22 @@ class BrainDockGUI:
             desc_label.pack(fill=tk.X, pady=(12, 0), padx=(40, 0))  # Align with title text
             desc_labels.append(desc_label)
         
-        # Update description wraplength when scrollable frame is resized
+        # Update description wraplength when content frame is resized
         def _update_desc_wraplength(event):
             """Update description label wraplength when window is resized."""
             new_width = max(200, event.width - 60)  # Subtract text left padding and section padx
             for label in desc_labels:
                 label.configure(wraplength=new_width)
         
-        # Bind scrollable frame configure event to update wraplength
-        scrollable_frame.bind("<Configure>", _update_desc_wraplength)
+        # Bind content frame configure event to update wraplength
+        content_frame.bind("<Configure>", _update_desc_wraplength)
         
-        # Force scrollable frame to render on Windows
-        # Windows requires explicit scroll region configuration for CTkScrollableFrame
-        def _refresh_scrollable_frame():
-            """Refresh scrollable frame content - required for Windows rendering."""
-            try:
-                tutorial_window.update_idletasks()
-                # Force the internal canvas to recalculate scroll region
-                if hasattr(scrollable_frame, '_parent_canvas'):
-                    canvas = scrollable_frame._parent_canvas
-                    canvas.configure(scrollregion=canvas.bbox("all"))
-                tutorial_window.update()
-            except Exception:
-                pass  # Window may be closing
-        
-        # Defer refresh to after window is fully mapped (critical for Windows)
-        tutorial_window.after(50, _refresh_scrollable_frame)
-        tutorial_window.after(150, _refresh_scrollable_frame)  # Second refresh for reliability
+        # Windows-specific: show window after content is added (was withdrawn earlier)
+        if sys.platform == "win32":
+            tutorial_window.update_idletasks()
+            tutorial_window.deiconify()
+            tutorial_window.lift()
+            tutorial_window.focus_force()
         
         logger.debug("Tutorial popup opened")
     
@@ -4558,7 +4562,7 @@ class BrainDockGUI:
         expired_label = tk.Label(
             content_frame,
             text="⏱️",
-            font=tkfont.Font(size=48),
+            font=tkfont.Font(size=get_dpi_scaled_font_size(48)),
             fg=COLORS["text_primary"],
             bg=COLORS["bg_primary"]
         )

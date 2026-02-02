@@ -40,9 +40,9 @@ WINDOWS_ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
 # Icon styling
 ICON_BACKGROUND_COLOR = (255, 255, 255, 255)  # White background (RGBA)
 ICON_CORNER_RADIUS_RATIO = 0.22  # Corner radius as ratio of icon size (iOS-style)
-LOGO_PADDING_RATIO = 0.12  # Padding around logo as ratio of icon size (reduced for clarity)
-SMALL_ICON_THRESHOLD = 48  # Icons smaller than this use reduced padding for clarity
-SMALL_ICON_PADDING_RATIO = 0.08  # Even less padding for small icons
+LOGO_PADDING_RATIO = 0.18  # Padding around logo (18% = logo takes ~64% of icon)
+SMALL_ICON_THRESHOLD = 48  # Icons smaller than this use slightly less padding
+SMALL_ICON_PADDING_RATIO = 0.15  # 15% padding for small icons
 
 
 def create_rounded_rectangle_mask(size: int, radius: int) -> Image.Image:
