@@ -1896,6 +1896,9 @@ class BrainDockGUI:
         self._consecutive_borderline_count: int = 0  # Count of consecutive borderline detections
         self._last_gadget_confidence: float = 0.0  # Last detection confidence for debugging
         
+        # Validate required audio files exist
+        self._validate_audio_files()
+        
         # Create UI elements
         self._create_fonts()
         self._create_widgets()
@@ -1963,6 +1966,47 @@ class BrainDockGUI:
         
         # Run in background thread so UI isn't blocked
         threading.Thread(target=prewarm, daemon=True).start()
+    
+    def _validate_audio_files(self):
+        """
+        Validate that required audio files exist for alert sounds.
+        
+        Logs warnings if audio files are missing so users know alerts won't work.
+        Audio alerts are a critical feature, so we want to catch missing files early.
+        """
+        # Check for platform-specific audio file
+        if sys.platform == "win32":
+            sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.wav"
+            expected_format = "WAV"
+        else:
+            sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.mp3"
+            expected_format = "MP3"
+        
+        if not sound_file.exists():
+            logger.warning(
+                f"Alert sound file not found: {sound_file}. "
+                f"Audio alerts will be disabled. "
+                f"Expected {expected_format} format for {sys.platform}."
+            )
+        else:
+            logger.debug(f"Audio file validated: {sound_file}")
+        
+        # Also validate that the other format exists (for bundled builds)
+        # This helps catch incomplete builds
+        if getattr(sys, 'frozen', False):
+            wav_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.wav"
+            mp3_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.mp3"
+            
+            if not wav_file.exists():
+                logger.warning(
+                    f"WAV audio file missing from bundle: {wav_file}. "
+                    "Windows audio alerts may not work."
+                )
+            if not mp3_file.exists():
+                logger.warning(
+                    f"MP3 audio file missing from bundle: {mp3_file}. "
+                    "macOS/Linux audio alerts may not work."
+                )
     
     def _set_macos_light_mode(self):
         """
@@ -5863,7 +5907,7 @@ class BrainDockGUI:
         Uses the custom MP3 file in data/braindock_alert_sound.mp3
         Cross-platform playback:
         - macOS: afplay (native MP3 support)
-        - Windows: start command with default media player
+        - Windows: winsound module (fast, native WAV support)
         - Linux: mpg123 or ffplay
         
         Also displays a supportive notification popup that auto-dismisses.
@@ -5874,7 +5918,7 @@ class BrainDockGUI:
         
         def play_sound():
             # Path to custom alert sound (bundled with app)
-            # Windows uses WAV (Media.SoundPlayer only supports WAV)
+            # Windows uses WAV (winsound only supports WAV)
             # macOS/Linux use MP3
             if sys.platform == "win32":
                 sound_file = config.BUNDLED_DATA_DIR / "braindock_alert_sound.wav"
@@ -5888,19 +5932,45 @@ class BrainDockGUI:
             try:
                 if sys.platform == "darwin":
                     # macOS - afplay supports MP3
-                    subprocess.Popen(
+                    # Run in background to not block UI
+                    process = subprocess.Popen(
                         ["afplay", str(sound_file)],
                         stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stderr=subprocess.PIPE
                     )
+                    # Check for errors in a non-blocking way
+                    def check_afplay_error():
+                        try:
+                            _, stderr = process.communicate(timeout=0.1)
+                            if stderr:
+                                logger.debug(f"afplay stderr: {stderr.decode()}")
+                        except subprocess.TimeoutExpired:
+                            pass  # Still playing, that's fine
+                        except Exception:
+                            pass
+                    # Schedule error check
+                    import threading
+                    threading.Thread(target=check_afplay_error, daemon=True).start()
+                    
                 elif sys.platform == "win32":
-                    # Windows - use powershell to play WAV file
-                    subprocess.Popen(
-                        ["powershell", "-c", f'(New-Object Media.SoundPlayer "{sound_file}").PlaySync()'],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
+                    # Windows - use winsound module for fast, native playback
+                    # This is much faster than PowerShell (~300ms savings)
+                    try:
+                        import winsound
+                        # SND_FILENAME: play from file, SND_ASYNC: don't block
+                        winsound.PlaySound(
+                            str(sound_file),
+                            winsound.SND_FILENAME | winsound.SND_ASYNC
+                        )
+                    except Exception as e:
+                        # Fallback to PowerShell if winsound fails
+                        logger.debug(f"winsound failed, using PowerShell: {e}")
+                        subprocess.Popen(
+                            ["powershell", "-c", f'(New-Object Media.SoundPlayer "{sound_file}").PlaySync()'],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
                 else:
                     # Linux - try mpg123 first, fallback to ffplay
                     try:
@@ -5916,7 +5986,7 @@ class BrainDockGUI:
                             stderr=subprocess.DEVNULL
                         )
             except Exception as e:
-                logger.debug(f"Sound playback error: {e}")
+                logger.warning(f"Sound playback error: {e}")
         
         # Play sound first (synchronously start the process)
         play_sound()

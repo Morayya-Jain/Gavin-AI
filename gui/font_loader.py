@@ -169,8 +169,11 @@ def get_font_sans() -> str:
     Return the sans-serif font family name.
     
     Returns:
-        'Helvetica' (system font for native appearance).
+        'Helvetica' on macOS/Linux, 'Helvetica' with 'Arial' fallback on Windows.
+        Windows tkinter will automatically fall back to Arial if Helvetica is unavailable.
     """
+    # Helvetica is the primary font on all platforms
+    # On Windows where Helvetica may not be installed, tkinter will use Arial as fallback
     return "Helvetica"
 
 
@@ -186,9 +189,59 @@ def get_font_serif() -> str:
 
 # Font family names - using original system fonts for native appearance
 # Bundled fonts (Inter/Lora) are available in assets/fonts/ if needed in future
-FONT_SANS = "Helvetica"   # Sans-serif (Arial on Windows)
+# 
+# Helvetica is preferred on all platforms. On Windows where Helvetica may not be
+# installed, tkinter's font system will automatically substitute a similar font.
+# We explicitly provide Arial as the fallback for Windows to ensure consistency.
+FONT_SANS = "Helvetica"   # Primary sans-serif font
 FONT_SERIF = "Georgia"    # Serif (available on both macOS and Windows)
 
-# Fallback font names
-FONT_SANS_FALLBACK = "Helvetica"
+# Fallback font names - Arial is the Windows equivalent of Helvetica
+FONT_SANS_FALLBACK = "Arial" if sys.platform == "win32" else "Helvetica"
 FONT_SERIF_FALLBACK = "Georgia"
+
+
+def get_font_with_fallback(primary: str, fallback: str) -> str:
+    """
+    Get a font name with fallback support.
+    
+    On Windows, if the primary font (e.g., Helvetica) is not available,
+    this returns the fallback font (e.g., Arial).
+    
+    Args:
+        primary: Primary font name to try
+        fallback: Fallback font name if primary unavailable
+        
+    Returns:
+        Font name to use (primary if available, otherwise fallback)
+    """
+    if sys.platform != "win32":
+        return primary
+    
+    # On Windows, check if the font is available using tkinter
+    try:
+        import tkinter as tk
+        import tkinter.font as tkfont
+        
+        # Create a temporary root if needed
+        temp_root = None
+        try:
+            temp_root = tk._default_root
+        except AttributeError:
+            pass
+        
+        if temp_root is None:
+            # Can't check fonts without a root window, return primary
+            # tkinter will handle fallback automatically
+            return primary
+        
+        available_fonts = tkfont.families()
+        if primary in available_fonts:
+            return primary
+        elif fallback in available_fonts:
+            return fallback
+        else:
+            return primary  # Let tkinter handle it
+    except Exception:
+        # If we can't check, return primary and let tkinter handle fallback
+        return primary

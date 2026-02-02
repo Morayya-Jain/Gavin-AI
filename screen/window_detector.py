@@ -145,7 +145,7 @@ class WindowDetector:
                 ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=5  # Increased from 2s for slower systems under load
             )
             
             if result.returncode != 0:
@@ -300,7 +300,7 @@ class WindowDetector:
                 ["osascript", "-e", script],
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=5  # Increased from 2s for slower systems under load
             )
             
             if result.returncode == 0:

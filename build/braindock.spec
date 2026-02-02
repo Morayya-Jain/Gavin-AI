@@ -102,8 +102,17 @@ except Exception as e:
 if IS_WINDOWS:
     try:
         datas += collect_data_files('tzdata')
-    except Exception:
-        print("WARNING: Could not collect tzdata - timezone initialization may be slow on Windows")
+        print("INFO: Bundled tzdata for Windows timezone support")
+    except Exception as e:
+        print("=" * 60)
+        print("CRITICAL WARNING: Could not collect tzdata!")
+        print(f"Error: {e}")
+        print("")
+        print("Without tzdata, the Windows app will have a 5+ minute delay")
+        print("on first launch as it downloads timezone data.")
+        print("")
+        print("To fix: pip install tzdata")
+        print("=" * 60)
     
     # Add Windows icon for taskbar (must be bundled for runtime use)
     # The .ico file is used by the app at runtime to set the taskbar icon
@@ -124,12 +133,24 @@ if IS_MACOS:
     libdynload_path = sysconfig.get_path('platlib')
 
     # Try multiple locations where _tkinter might be
+    # Covers: official Python installer, pyenv, Homebrew (Intel & Apple Silicon)
     tkinter_locations = [
+        # Dynamic paths based on current Python installation
         os.path.join(sysconfig.get_config_var('LIBDIR') or '', 'python*', 'lib-dynload', '_tkinter*.so'),
         os.path.join(stdlib_path or '', '..', 'lib-dynload', '_tkinter*.so'),
         os.path.join(sys.prefix, 'lib', 'python*', 'lib-dynload', '_tkinter*.so'),
+        # Official Python.org installer
         '/Library/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        # pyenv installations
         os.path.expanduser('~/.pyenv/versions/*/lib/python*/lib-dynload/_tkinter*.so'),
+        # Homebrew Python - Apple Silicon (M1/M2/M3)
+        '/opt/homebrew/Cellar/python@*/*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        '/opt/homebrew/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        '/opt/homebrew/opt/python@*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        # Homebrew Python - Intel Macs
+        '/usr/local/Cellar/python@*/*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        '/usr/local/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
+        '/usr/local/opt/python@*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
     ]
 
     tkinter_found = False
@@ -149,11 +170,20 @@ if IS_MACOS:
         print("WARNING: Could not find _tkinter.so - tkinter may not work in bundled app")
 
     # Also ensure Tcl/Tk libraries are properly bundled
-    # Look for Tcl and Tk frameworks/libraries
+    # Look for Tcl and Tk frameworks/libraries across all installation methods
     tcltk_locations = [
+        # System/Official installer frameworks
         '/Library/Frameworks/Tcl.framework',
         '/Library/Frameworks/Tk.framework',
+        # Homebrew tcl-tk - Intel Macs
         '/usr/local/opt/tcl-tk/lib',
+        '/usr/local/opt/tcl-tk/lib/libtcl*.dylib',
+        '/usr/local/opt/tcl-tk/lib/libtk*.dylib',
+        # Homebrew tcl-tk - Apple Silicon
+        '/opt/homebrew/opt/tcl-tk/lib',
+        '/opt/homebrew/opt/tcl-tk/lib/libtcl*.dylib',
+        '/opt/homebrew/opt/tcl-tk/lib/libtk*.dylib',
+        # pyenv installations
         os.path.expanduser('~/.pyenv/versions/*/lib/libtcl*.dylib'),
         os.path.expanduser('~/.pyenv/versions/*/lib/libtk*.dylib'),
     ]
@@ -328,7 +358,7 @@ if IS_MACOS:
             'CFBundleExecutable': 'BrainDock',
             'CFBundleIdentifier': 'com.braindock.app',
             'CFBundlePackageType': 'APPL',
-            'CFBundleSignature': '????',
+            'CFBundleSignature': 'BDCK',  # BrainDock 4-char bundle signature
             # Minimum macOS 10.15 (Catalina) required for Screen Recording permission
             # and modern AVFoundation camera permission APIs
             'LSMinimumSystemVersion': '10.15.0',

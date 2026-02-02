@@ -55,11 +55,22 @@ def get_macos_camera_permission_status() -> int:
         logger.debug(f"macOS camera permission status: {status}")
         return status
     except ImportError:
-        logger.warning("AVFoundation not available - assuming camera permission granted")
-        return CAMERA_PERMISSION_AUTHORIZED
+        # AVFoundation not available - this is unusual on macOS
+        # Log prominently and return NOT_DETERMINED so we attempt camera access
+        # which will trigger the permission dialog if needed
+        logger.warning(
+            "AVFoundation framework not available. "
+            "Camera permission status cannot be verified. "
+            "If camera fails to open, check System Settings → Privacy & Security → Camera."
+        )
+        # Return NOT_DETERMINED instead of AUTHORIZED to be more cautious
+        # This ensures we don't silently assume permission is granted
+        return CAMERA_PERMISSION_NOT_DETERMINED
     except Exception as e:
         logger.error(f"Error checking camera permission: {e}")
-        return CAMERA_PERMISSION_AUTHORIZED
+        # On error, return NOT_DETERMINED rather than assuming authorized
+        # This provides a more accurate state and better user experience
+        return CAMERA_PERMISSION_NOT_DETERMINED
 
 
 def request_macos_camera_permission() -> bool:

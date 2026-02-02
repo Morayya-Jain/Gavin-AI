@@ -307,16 +307,22 @@ class InstanceLock:
                 self._acquired = False
                 
                 # Clean up lock file (optional, but tidy)
-                # On Windows, the file might still be in use briefly - retry with delay
-                for attempt in range(3):
+                # On Windows, the file might still be in use briefly - retry with exponential backoff
+                max_attempts = 5 if sys.platform == 'win32' else 3
+                for attempt in range(max_attempts):
                     try:
                         if self.lock_file.exists():
                             self.lock_file.unlink()
                         break
                     except PermissionError:
-                        if attempt < 2:
+                        if attempt < max_attempts - 1:
                             import time
-                            time.sleep(0.1)  # Brief delay before retry
+                            # Exponential backoff: 0.1s, 0.2s, 0.4s, 0.8s
+                            delay = 0.1 * (2 ** attempt)
+                            time.sleep(delay)
+                        else:
+                            # Final attempt failed - log but don't crash
+                            logger.debug(f"Could not delete lock file after {max_attempts} attempts")
                     except Exception:
                         break  # Ignore other cleanup errors
                     
