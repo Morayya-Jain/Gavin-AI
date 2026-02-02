@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import random
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
@@ -22,8 +21,7 @@ from reportlab.platypus import (
     Image,
     Flowable
 )
-from io import BytesIO
-from PIL import Image as PILImage, ImageDraw, ImageFont
+from PIL import Image as PILImage
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.graphics.shapes import Drawing, Wedge, Polygon, Circle
 import math
@@ -238,7 +236,7 @@ def _load_focus_statements() -> Dict[str, Any]:
     
     Returns:
         Dictionary with nested category structure:
-        {category: {subcategory: [statements]}, emojis: {...}}
+        {category: {subcategory: [statements]}}
     """
     # Import config for bundled data directory path
     import config
@@ -367,158 +365,6 @@ def _create_focus_statement_paragraph(
     )
     
     return Paragraph(colored_statement, statement_style)
-
-
-def _get_random_focus_emoji(focus_pct: float) -> str:
-    """
-    Get a random emoji based on the focus percentage category.
-    
-    Args:
-        focus_pct: Focus percentage (0-100)
-        
-    Returns:
-        A face emoji corresponding to the focus category
-    """
-    category_key, _, _ = _get_focus_category(focus_pct)
-    statements_data = _load_focus_statements()
-    
-    # Get emojis for this category (fallback to neutral face)
-    emojis = statements_data.get('emojis', {}).get(category_key, ['😐'])
-    
-    return random.choice(emojis)
-
-
-def _get_emoji_font_paths() -> list:
-    """
-    Get a list of emoji font paths to try, ordered by platform preference.
-    
-    Returns:
-        List of tuples: (font_path, size) to try in order
-    """
-    import platform
-    system = platform.system()
-    
-    # Default size for scalable fonts (reduced to prevent overflow)
-    default_size = 40
-    
-    # Platform-specific font configurations
-    # Format: (font_path, size) - size is important for bitmap fonts like Apple Color Emoji
-    
-    if system == 'Darwin':  # macOS
-        return [
-            # Apple Color Emoji - bitmap font, only supports fixed sizes
-            ('/System/Library/Fonts/Apple Color Emoji.ttc', 40),
-            ('/System/Library/Fonts/Apple Color Emoji.ttc', 32),
-            ('/System/Library/Fonts/Apple Color Emoji.ttc', 24),
-        ]
-    
-    elif system == 'Windows':
-        # Use WINDIR environment variable instead of hardcoded C:\Windows
-        # This handles non-standard Windows installations
-        windir = os.environ.get('WINDIR', 'C:\\Windows')
-        return [
-            # Segoe UI Emoji - Windows 10/11 default emoji font
-            (os.path.join(windir, 'Fonts', 'seguiemj.ttf'), default_size),
-            # Alternative paths
-            ('seguiemj.ttf', default_size),  # Let system find it
-            # Older Windows might have different emoji support
-            (os.path.join(windir, 'Fonts', 'segoe ui emoji.ttf'), default_size),
-        ]
-    
-    else:  # Linux and others
-        return [
-            # Noto Color Emoji - most common on Linux
-            # Ubuntu/Debian
-            ('/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf', default_size),
-            # Fedora/RHEL
-            ('/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf', default_size),
-            # Arch Linux
-            ('/usr/share/fonts/noto-color-emoji/NotoColorEmoji.ttf', default_size),
-            # Generic noto path
-            ('/usr/share/fonts/noto/NotoColorEmoji.ttf', default_size),
-            # Twitter Color Emoji (alternative on some systems)
-            ('/usr/share/fonts/truetype/twitter-color-emoji/TwitterColorEmoji-SVGinOT.ttf', default_size),
-            # Twemoji
-            ('/usr/share/fonts/truetype/twemoji/Twemoji.ttf', default_size),
-            # JoyPixels/EmojiOne
-            ('/usr/share/fonts/joypixels/JoyPixels.ttf', default_size),
-        ]
-
-
-def _create_focus_emoji_image(focus_pct: float) -> Optional[Table]:
-    """
-    Create a centered emoji image for the focus category.
-    
-    Renders the emoji using platform-specific color emoji fonts.
-    Supports macOS (Apple Color Emoji), Windows (Segoe UI Emoji),
-    and Linux (Noto Color Emoji, Twitter Emoji, etc.).
-    
-    Returns None if no emoji font is available (no fallback).
-    
-    Args:
-        focus_pct: Focus percentage (0-100)
-        
-    Returns:
-        ReportLab Table containing the centered emoji image, or None if unavailable
-    """
-    emoji = _get_random_focus_emoji(focus_pct)
-    
-    # Default size (will be updated if font loads successfully)
-    emoji_size = 40
-    
-    # Try to load emoji font (platform-specific order)
-    font = None
-    font_configs = _get_emoji_font_paths()
-    
-    for font_path, size in font_configs:
-        try:
-            font = ImageFont.truetype(font_path, size)
-            emoji_size = size  # Update to the size that worked
-            logger.debug(f"Loaded emoji font: {font_path} at size {size}")
-            break
-        except (OSError, IOError) as e:
-            logger.debug(f"Could not load font {font_path}: {e}")
-            continue
-    
-    # If no emoji font found, don't display anything
-    if not font:
-        logger.info("No emoji font available - skipping emoji display")
-        return None
-    
-    # Create image with transparent background
-    img_size = int(emoji_size * 1.2)
-    img = PILImage.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
-    
-    # Calculate position to center the emoji
-    bbox = draw.textbbox((0, 0), emoji, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    x = (img_size - text_width) // 2
-    y = (img_size - text_height) // 2 - bbox[1]
-    
-    # Draw the emoji with color support
-    draw.text((x, y), emoji, font=font, embedded_color=True)
-    
-    # Convert PIL image to bytes
-    img_buffer = BytesIO()
-    img.save(img_buffer, format='PNG')
-    img_buffer.seek(0)
-    
-    # Create ReportLab image
-    rl_image = Image(img_buffer, width=emoji_size, height=emoji_size)
-    
-    # Wrap in a table to center it (width matches card content area: 6.2 inch - 40px padding)
-    table = Table([[rl_image]], colWidths=[5.65 * inch])
-    table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (0, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (0, 0), 10),
-    ]))
-    table.hAlign = 'CENTER'
-    
-    return table
 
 
 def _draw_focus_gauge(focus_pct: float) -> Drawing:
@@ -825,7 +671,7 @@ def _create_focus_card(
     stats: Optional[Dict[str, Any]] = None
 ) -> RoundedBoxFlowable:
     """
-    Create a rounded card containing the focus gauge, legend, statement, and emoji.
+    Create a rounded card containing the focus gauge, legend, and statement.
     
     Groups all focus visualization elements into a visually cohesive container
     with rounded corners, background, and border styling. The statement is
@@ -1151,7 +997,7 @@ def generate_report(
     
     story.append(stats_table)
     
-    # Add focus visualization card (gauge, legend, statement, emoji in a rounded container)
+    # Add focus visualization card (gauge, legend, statement in a rounded container)
     # Pass stats to customize the statement based on dominant distraction type
     story.append(Spacer(1, 0.4 * inch))
     focus_card = _create_focus_card(focus_pct, stats)
