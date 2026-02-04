@@ -116,7 +116,7 @@ If the app doesn't start:
 
 If alert sounds don't play:
 - Check your system volume is not muted
-- The app uses Windows Media.SoundPlayer for audio
+- The app uses Windows winsound module for audio (with PowerShell fallback)
 
 If Chrome/Edge URL detection doesn't work:
 - Make sure the browser window is in the foreground

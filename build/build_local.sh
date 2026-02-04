@@ -57,8 +57,8 @@ echo ""
 echo -e "${YELLOW}Cleaning previous build...${NC}"
 rm -rf dist/BrainDock.app dist/*.dmg build/pyinstaller-work
 
-# Get version
-VERSION=$(grep -E "^APP_VERSION\s*=" config.py | sed 's/.*"\(.*\)".*/\1/')
+# Get version (hardcoded to match build_macos.sh)
+VERSION="1.0.0"
 echo -e "${GREEN}Building version:${NC} $VERSION"
 
 # Build with PyInstaller

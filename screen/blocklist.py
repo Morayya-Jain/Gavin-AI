@@ -776,7 +776,7 @@ class BlocklistManager:
                     data = json.load(f)
                 self._blocklist = Blocklist.from_dict(data)
                 logger.info(f"Loaded blocklist from {self.settings_path}")
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, IOError, OSError) as e:
                 logger.warning(f"Invalid blocklist file, using defaults: {e}")
                 self._blocklist = Blocklist()
         else:

@@ -38,7 +38,7 @@ DefaultGroupName={#MyAppName}
 
 ; Output settings
 OutputDir=..\dist
-OutputBaseFilename=BrainDock-Setup
+OutputBaseFilename=BrainDock-{#MyAppVersion}-Setup
 ; Use zip compression for fastest installation speed
 ; Trade-off: ~20-25% larger installer but 5-10x faster to install
 Compression=zip/9

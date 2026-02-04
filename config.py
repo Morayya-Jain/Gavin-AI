@@ -107,10 +107,12 @@ VISION_PROVIDER = os.getenv("VISION_PROVIDER", "gemini")
 # Priority: 1) Environment variable, 2) Bundled key module, 3) Empty string
 
 # Try to import bundled keys (generated at build time)
+_bundled_keys_available = False
 try:
     import bundled_keys
     _BUNDLED_OPENAI_KEY = bundled_keys.get_key("OPENAI_API_KEY")
     _BUNDLED_GEMINI_KEY = bundled_keys.get_key("GEMINI_API_KEY")
+    _bundled_keys_available = True
 except ImportError:
     # Development mode or bundled_keys not available
     # Fall back to environment variables (old method, for backwards compatibility)
@@ -286,19 +288,12 @@ _BUNDLED_STRIPE_SECRET = ""
 _BUNDLED_STRIPE_PUBLISHABLE = ""
 _BUNDLED_STRIPE_PRICE_ID = ""
 
-try:
-    # Check if bundled_keys was already imported successfully
-    if 'bundled_keys' in dir():
-        _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
-        _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
-        _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
-    else:
-        # Try importing bundled_keys (handles case where it wasn't imported earlier)
-        import bundled_keys as _bk
-        _BUNDLED_STRIPE_SECRET = _bk.get_key("STRIPE_SECRET_KEY")
-        _BUNDLED_STRIPE_PUBLISHABLE = _bk.get_key("STRIPE_PUBLISHABLE_KEY")
-        _BUNDLED_STRIPE_PRICE_ID = _bk.get_key("STRIPE_PRICE_ID")
-except (ImportError, NameError):
+if _bundled_keys_available:
+    # Reuse the bundled_keys module imported earlier
+    _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
+    _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
+    _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
+else:
     # Development mode or bundled_keys not available
     # Fall back to environment variables (old method, for backwards compatibility)
     _BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")

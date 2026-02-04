@@ -108,6 +108,14 @@ foreach ($path in $InnoSetupPaths) {
     }
 }
 
+# Also try to find ISCC.exe via PATH
+if (-not $InnoSetup) {
+    $InnoSetupFromPath = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+    if ($InnoSetupFromPath) {
+        $InnoSetup = $InnoSetupFromPath
+    }
+}
+
 if (-not $InnoSetup) {
     Write-Host "Error: Inno Setup 6 not found." -ForegroundColor Red
     Write-Host ""

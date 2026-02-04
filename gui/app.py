@@ -125,15 +125,18 @@ def open_macos_camera_settings():
             # macOS Ventura and later use this URL scheme
             subprocess.run(
                 ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"],
-                check=True
+                check=True,
+                timeout=10
             )
         except Exception as e:
             logger.error(f"Failed to open System Settings: {e}")
             # Fallback: open System Settings main page
             try:
-                subprocess.run(["open", "-a", "System Settings"], check=True)
+                subprocess.run(["open", "-a", "System Settings"], check=True, timeout=10)
+                logger.debug("Opened System Settings (macOS Ventura+)")
             except Exception:
-                subprocess.run(["open", "-a", "System Preferences"], check=True)
+                subprocess.run(["open", "-a", "System Preferences"], check=True, timeout=10)
+                logger.debug("Opened System Preferences (pre-Ventura macOS)")
 
 
 def open_macos_accessibility_settings():
@@ -143,15 +146,18 @@ def open_macos_accessibility_settings():
             # macOS Ventura and later use this URL scheme
             subprocess.run(
                 ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
-                check=True
+                check=True,
+                timeout=10
             )
         except Exception as e:
             logger.error(f"Failed to open System Settings: {e}")
             # Fallback: open System Settings main page
             try:
-                subprocess.run(["open", "-a", "System Settings"], check=True)
+                subprocess.run(["open", "-a", "System Settings"], check=True, timeout=10)
+                logger.debug("Opened System Settings (macOS Ventura+)")
             except Exception:
-                subprocess.run(["open", "-a", "System Preferences"], check=True)
+                subprocess.run(["open", "-a", "System Preferences"], check=True, timeout=10)
+                logger.debug("Opened System Preferences (pre-Ventura macOS)")
 
 
 # --- Windows Camera Permission Check ---
@@ -654,21 +660,19 @@ def _get_available_fonts():
     global _available_fonts_cache
     if _available_fonts_cache is None:
         try:
-            # Create a temporary root if needed to access font families
-            temp_root = None
-            try:
-                # Try to get existing Tk instance
-                root = tk._default_root
-                if root is None:
-                    temp_root = tk.Tk()
-                    temp_root.withdraw()
-                    root = temp_root
+            # Try to get existing Tk instance first (avoid creating temp root early)
+            root = tk._default_root
+            if root is not None and root.winfo_exists():
+                # Use existing root to get fonts
                 _available_fonts_cache = {f.lower() for f in tkfont.families()}
-            finally:
-                if temp_root:
-                    temp_root.destroy()
+            else:
+                # No existing root - defer initialization until main window exists
+                # Return common fonts as temporary fallback to avoid creating temp Tk
+                return {"inter", "sf pro display", "segoe ui", "helvetica neue", 
+                        "helvetica", "arial", "times new roman"}
         except Exception:
-            _available_fonts_cache = set()
+            # Return common fonts as fallback
+            return {"inter", "helvetica", "arial"}
     return _available_fonts_cache
 
 
@@ -939,6 +943,10 @@ class IconButton(tk.Canvas):
             
             img = Image.open(self.image_path)
             img = img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+            
+            # Explicitly cleanup old PhotoImage before creating new one
+            if self._photo_image is not None:
+                del self._photo_image
             self._photo_image = ImageTk.PhotoImage(img)
             
             self.create_image(cx, cy, image=self._photo_image)
@@ -1300,6 +1308,7 @@ class Tooltip:
         self.bg = bg
         self.fg = fg
         self.tooltip_window = None
+        self._creating = False  # Prevent show/hide race on rapid mouse movement
         
         # Bind hover events
         self.widget.bind("<Enter>", self._show_tooltip)
@@ -1317,41 +1326,47 @@ class Tooltip:
     
     def _show_tooltip(self, event=None):
         """Show the tooltip window."""
-        if not self.text:
+        if not self.text or self._creating:
             return
         
-        # Create tooltip window
-        self.tooltip_window = tk.Toplevel(self.widget)
-        self.tooltip_window.wm_overrideredirect(True)  # No window decorations
-        self.tooltip_window.wm_attributes("-topmost", True)
-        
-        # Position near the widget
-        x = self.widget.winfo_rootx() + 10
-        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-        self.tooltip_window.wm_geometry(f"+{x}+{y}")
-        
-        # Create tooltip content with padding
-        frame = tk.Frame(self.tooltip_window, bg=self.bg, bd=1, relief="solid")
-        frame.pack()
-        
-        # Use system font with fallback (SF Pro Display > Segoe UI > Helvetica)
-        tooltip_font = get_system_font(size=11, weight="normal")
-        
-        label = tk.Label(
-            frame,
-            text=self.text,
-            bg=self.bg,
-            fg=self.fg,
-            font=tooltip_font,
-            padx=8,
-            pady=4,
-            wraplength=400,  # Wrap long text
-            justify="left"
-        )
-        label.pack()
+        self._creating = True
+        try:
+            # Create tooltip window
+            self.tooltip_window = tk.Toplevel(self.widget)
+            self.tooltip_window.wm_overrideredirect(True)  # No window decorations
+            self.tooltip_window.wm_attributes("-topmost", True)
+            
+            # Position near the widget
+            x = self.widget.winfo_rootx() + 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+            self.tooltip_window.wm_geometry(f"+{x}+{y}")
+            
+            # Create tooltip content with padding
+            frame = tk.Frame(self.tooltip_window, bg=self.bg, bd=1, relief="solid")
+            frame.pack()
+            
+            # Use system font with fallback (SF Pro Display > Segoe UI > Helvetica)
+            tooltip_font = get_system_font(size=11, weight="normal")
+            
+            label = tk.Label(
+                frame,
+                text=self.text,
+                bg=self.bg,
+                fg=self.fg,
+                font=tooltip_font,
+                padx=8,
+                pady=4,
+                wraplength=400,  # Wrap long text
+                justify="left"
+            )
+            label.pack()
+        finally:
+            self._creating = False
     
     def _hide_tooltip(self, event=None):
         """Hide the tooltip window."""
+        if self._creating:
+            return  # Don't hide while still creating
         if self.tooltip_window:
             self.tooltip_window.destroy()
             self.tooltip_window = None
@@ -1753,6 +1768,7 @@ class NotificationPopup:
                 self.parent.after_cancel(self._dismiss_after_id)
             except Exception:
                 pass
+            self._dismiss_after_id = None
         
         # Destroy window
         try:
@@ -2953,10 +2969,19 @@ class BrainDockGUI:
         )
         save_btn.pack(side=tk.LEFT, padx=(0, 15))
         
+        def _close_settings_window():
+            """Close settings window with proper scroll binding cleanup."""
+            try:
+                settings_window.unbind_all("<MouseWheel>")
+                settings_window.unbind_all("<TouchpadScroll>")
+            except Exception:
+                pass  # Ignore errors during cleanup
+            settings_window.destroy()
+        
         cancel_btn = RoundedButton(
             button_container,
             text="Cancel",
-            command=settings_window.destroy,
+            command=_close_settings_window,
             bg_color=COLORS["button_pause"],
             hover_color=COLORS["button_pause_hover"],
             fg_color=COLORS["text_white"],
@@ -4269,7 +4294,12 @@ class BrainDockGUI:
                 "\n".join(messages) + "\n\nSettings saved successfully."
             )
         
-        # Close dialog
+        # Close dialog with proper scroll binding cleanup
+        try:
+            settings_window.unbind_all("<MouseWheel>")
+            settings_window.unbind_all("<TouchpadScroll>")
+        except Exception:
+            pass  # Ignore errors during cleanup
         settings_window.destroy()
         
         logger.info(f"Blocklist settings saved (URLs: {len(final_urls)}, Apps: {len(final_apps)}, "
@@ -4559,9 +4589,10 @@ class BrainDockGUI:
             tutorial_window: The tutorial window to close
             canvas: The canvas widget (unused, kept for compatibility)
         """
-        # Clean up bindings
+        # Clean up bindings (both MouseWheel and TouchpadScroll were bound)
         try:
             tutorial_window.unbind_all("<MouseWheel>")
+            tutorial_window.unbind_all("<TouchpadScroll>")
         except Exception:
             pass  # Ignore errors during cleanup (window may already be destroyed)
         tutorial_window.destroy()
@@ -4779,7 +4810,12 @@ class BrainDockGUI:
     def _stop_lockout_check(self):
         """Stop the periodic lockout availability check."""
         if hasattr(self, '_lockout_check_id') and self._lockout_check_id is not None:
-            self.root.after_cancel(self._lockout_check_id)
+            # Check if root window still exists before cancelling
+            if self.root.winfo_exists():
+                try:
+                    self.root.after_cancel(self._lockout_check_id)
+                except Exception:
+                    pass
             self._lockout_check_id = None
     
     def _hide_lockout_overlay(self):
@@ -5309,18 +5345,19 @@ class BrainDockGUI:
         # Signal thread to stop
         self.should_stop.set()
         self.is_running = False
+        logger.debug(f"Stop signal set, should_stop={self.should_stop.is_set()}")
         
         # Wait for detection thread(s) to finish and clean up references
         if self.detection_thread and self.detection_thread.is_alive():
             self.detection_thread.join(timeout=2.0)
             if self.detection_thread.is_alive():
-                logger.warning("Detection thread did not stop within timeout - may be stuck")
+                logger.warning(f"Detection thread did not stop within timeout - may be stuck in API call (thread={self.detection_thread.name})")
         self.detection_thread = None  # Clean up reference for garbage collection
         
         if self.screen_detection_thread and self.screen_detection_thread.is_alive():
             self.screen_detection_thread.join(timeout=2.0)
             if self.screen_detection_thread.is_alive():
-                logger.warning("Screen detection thread did not stop within timeout - may be stuck")
+                logger.warning(f"Screen detection thread did not stop within timeout - may be stuck (thread={self.screen_detection_thread.name})")
         self.screen_detection_thread = None  # Clean up reference for garbage collection
         
         # Show mode selector again
@@ -5739,18 +5776,19 @@ class BrainDockGUI:
             
             self.should_stop.set()
             self.is_running = False
+            logger.debug(f"Stop signal set, should_stop={self.should_stop.is_set()}")
             
             # Wait for detection thread(s) to finish and clean up references
             if self.detection_thread and self.detection_thread.is_alive():
                 self.detection_thread.join(timeout=2.0)
                 if self.detection_thread.is_alive():
-                    logger.warning("Detection thread did not stop within timeout - may be stuck")
+                    logger.warning(f"Detection thread did not stop within timeout - may be stuck in API call (thread={self.detection_thread.name})")
             self.detection_thread = None  # Clean up reference for garbage collection
             
             if self.screen_detection_thread and self.screen_detection_thread.is_alive():
                 self.screen_detection_thread.join(timeout=2.0)
                 if self.screen_detection_thread.is_alive():
-                    logger.warning("Screen detection thread did not stop within timeout - may be stuck")
+                    logger.warning(f"Screen detection thread did not stop within timeout - may be stuck (thread={self.screen_detection_thread.name})")
             self.screen_detection_thread = None  # Clean up reference for garbage collection
             
             # End session with captured stop time
@@ -6224,7 +6262,7 @@ class BrainDockGUI:
         """
         try:
             if sys.platform == "darwin":  # macOS
-                subprocess.run(["open", str(filepath)], check=True)
+                subprocess.run(["open", str(filepath)], check=True, timeout=10)
             elif sys.platform == "win32":  # Windows
                 # For PDF files, try Microsoft Edge first (built into Windows 10/11)
                 # This prevents PDFs from opening in Word when no PDF viewer is installed
@@ -6234,6 +6272,7 @@ class BrainDockGUI:
                         subprocess.run(
                             ["cmd", "/c", "start", "msedge", str(filepath)],
                             check=True,
+                            timeout=10,
                             creationflags=subprocess.CREATE_NO_WINDOW
                         )
                         return
@@ -6242,7 +6281,7 @@ class BrainDockGUI:
                 # Fall back to system default for non-PDFs or if Edge fails
                 os.startfile(str(filepath))
             else:  # Linux
-                subprocess.run(["xdg-open", str(filepath)], check=True)
+                subprocess.run(["xdg-open", str(filepath)], check=True, timeout=10)
         except Exception as e:
             logger.error(f"Failed to open file: {e}")
 
@@ -6449,18 +6488,19 @@ class BrainDockGUI:
             # Stop session
             self.should_stop.set()
             self.is_running = False
+            logger.debug(f"Stop signal set, should_stop={self.should_stop.is_set()}")
             
             # Wait for detection thread(s) to finish and clean up references
             if self.detection_thread and self.detection_thread.is_alive():
                 self.detection_thread.join(timeout=2.0)
                 if self.detection_thread.is_alive():
-                    logger.warning("Detection thread did not stop within timeout - may be stuck")
+                    logger.warning(f"Detection thread did not stop within timeout - may be stuck in API call (thread={self.detection_thread.name})")
             self.detection_thread = None  # Clean up reference for garbage collection
             
             if self.screen_detection_thread and self.screen_detection_thread.is_alive():
                 self.screen_detection_thread.join(timeout=2.0)
                 if self.screen_detection_thread.is_alive():
-                    logger.warning("Screen detection thread did not stop within timeout - may be stuck")
+                    logger.warning(f"Screen detection thread did not stop within timeout - may be stuck (thread={self.screen_detection_thread.name})")
             self.screen_detection_thread = None  # Clean up reference for garbage collection
             
             # End session and record usage with correct active duration

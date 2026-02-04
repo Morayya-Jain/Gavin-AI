@@ -176,12 +176,14 @@ class DailyStatsTracker:
         Get current daily statistics.
         
         Checks for day change before returning to ensure accuracy.
+        Thread-safe: Uses lock to prevent race condition at midnight reset.
         
         Returns:
             Dict with focus_seconds, distraction_seconds, and breakdowns.
         """
-        self._check_and_reset_if_new_day()
-        return self.data.copy()
+        with self._lock:
+            self._check_and_reset_if_new_day()
+            return self.data.copy()
     
     def get_focus_seconds(self) -> float:
         """Get total focused time today in seconds (float for precision)."""

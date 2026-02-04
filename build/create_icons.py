@@ -194,7 +194,8 @@ def create_macos_icns(logo_path: Path, output_path: Path) -> bool:
         else:
             print("  Note: iconutil only available on macOS")
             print(f"  Iconset created at: {iconset_dir}")
-            print("  Run 'iconutil -c icns' on macOS to create .icns file")
+            print("  This directory is intentionally left for manual processing.")
+            print("  Copy to macOS and run: iconutil -c icns icon.iconset")
             return True
             
     except Exception as e:

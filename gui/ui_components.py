@@ -1016,7 +1016,12 @@ class NaturalScroller:
             return
         
         try:
+            # Check canvas exists before accessing
+            if not hasattr(scrollable_frame, '_parent_canvas'):
+                return
             canvas = scrollable_frame._parent_canvas
+            if canvas is None or not canvas.winfo_exists():
+                return
             current = canvas.yview()
             visible = current[1] - current[0]
             
@@ -1090,13 +1095,21 @@ class NaturalScroller:
             return
         
         try:
+            # Check canvas exists before accessing
+            if not hasattr(scrollable_frame, '_parent_canvas'):
+                self._animating = False
+                return
+            canvas = scrollable_frame._parent_canvas
+            if canvas is None or not canvas.winfo_exists():
+                self._animating = False
+                return
+            
             # Measure actual frame time and adapt if needed
             if self._last_frame_time > 0:
                 actual_frame_ms = (current_frame_time - self._last_frame_time) * 1000
                 self._adapt_frame_rate(actual_frame_ms)
             self._last_frame_time = current_frame_time
             
-            canvas = scrollable_frame._parent_canvas
             current = canvas.yview()
             visible = current[1] - current[0]
             
@@ -1246,6 +1259,15 @@ class WindowsCompatibleScrollableFrame(ctk.CTkFrame):
         """Handle mousewheel scrolling."""
         if self._canvas:
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+    
+    def destroy(self):
+        """Cleanup bind_all handlers before destroying the widget."""
+        if self._use_fallback and self._canvas:
+            try:
+                self._canvas.unbind_all("<MouseWheel>")
+            except Exception:
+                pass  # Ignore errors during cleanup
+        super().destroy()
     
     def get_content_frame(self) -> ctk.CTkFrame:
         """

@@ -16,8 +16,8 @@ echo         BrainDock Windows Build
 echo ================================================
 echo.
 
-REM Check if GEMINI_API_KEY is set
-if "%GEMINI_API_KEY%"=="" (
+REM Check if GEMINI_API_KEY is set (use 'defined' for robust check)
+if not defined GEMINI_API_KEY (
     echo Error: GEMINI_API_KEY environment variable is required.
     echo.
     echo Usage:
