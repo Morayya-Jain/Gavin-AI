@@ -3189,28 +3189,25 @@ class BrainDockGUI:
                     def _on_scroll(event, canvas=_canvas):
                         try:
                             delta = event.delta
-                            if delta > 32767:
-                                delta = delta - 65536
                             
-                            # Skip very small deltas to reduce jitter
-                            if abs(delta) < 1:
+                            # Handle Tk 9.0: mask to 16 bits first, then interpret as signed
+                            delta = delta & 0xFFFF  # Mask to 16 bits
+                            if delta > 32767:
+                                delta = delta - 65536  # Convert to signed
+                            
+                            # Skip zero deltas
+                            if delta == 0:
                                 return "break"
                             
-                            current = canvas.yview()
-                            visible = current[1] - current[0]
-                            
-                            # Smoother scroll with adjusted sensitivity
-                            scroll_amount = -delta * 0.001
-                            new_pos = current[0] + scroll_amount
-                            new_pos = max(0.0, min(1.0 - visible, new_pos))
-                            
-                            canvas.yview_moveto(new_pos)
+                            # Reduce sensitivity by dividing delta
+                            units = -delta // 4
+                            if units != 0:
+                                canvas.yview_scroll(units, "units")
                         except:
                             pass
-                        # Return "break" to prevent CTkScrollableFrame's internal handling
                         return "break"
                     
-                    # Unbind any existing scroll handlers on the canvas first
+                    # Unbind any existing scroll handlers
                     try:
                         _canvas.unbind_all("<MouseWheel>")
                         _canvas.unbind_all("<TouchpadScroll>")
@@ -4522,28 +4519,25 @@ class BrainDockGUI:
                     def _on_scroll(event, canvas=_canvas):
                         try:
                             delta = event.delta
-                            if delta > 32767:
-                                delta = delta - 65536
                             
-                            # Skip very small deltas to reduce jitter
-                            if abs(delta) < 1:
+                            # Handle Tk 9.0: mask to 16 bits first, then interpret as signed
+                            delta = delta & 0xFFFF  # Mask to 16 bits
+                            if delta > 32767:
+                                delta = delta - 65536  # Convert to signed
+                            
+                            # Skip zero deltas
+                            if delta == 0:
                                 return "break"
                             
-                            current = canvas.yview()
-                            visible = current[1] - current[0]
-                            
-                            # Smoother scroll with adjusted sensitivity
-                            scroll_amount = -delta * 0.001
-                            new_pos = current[0] + scroll_amount
-                            new_pos = max(0.0, min(1.0 - visible, new_pos))
-                            
-                            canvas.yview_moveto(new_pos)
+                            # Reduce sensitivity by dividing delta
+                            units = -delta // 4
+                            if units != 0:
+                                canvas.yview_scroll(units, "units")
                         except:
                             pass
-                        # Return "break" to prevent CTkScrollableFrame's internal handling
                         return "break"
                     
-                    # Unbind any existing scroll handlers on the canvas first
+                    # Unbind any existing scroll handlers
                     try:
                         _canvas.unbind_all("<MouseWheel>")
                         _canvas.unbind_all("<TouchpadScroll>")
