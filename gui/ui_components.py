@@ -879,13 +879,13 @@ class NaturalScroller:
             return -delta / 120 * self.SCROLL_MULTIPLIER
         else:
             # macOS: handle signed 16-bit delta for touchpad
-            # Using same multiplier as Windows for consistent UX
+            # Tk 9.0+ uses TouchpadScroll events with small deltas (1-50 range)
             delta_y = delta & 0xFFFF
             if delta_y > 32767:
                 delta_y -= 65536
-            # Scale macOS delta to match Windows behavior
-            # macOS typically gives smaller deltas, so we normalize differently
-            return delta_y * (self.SCROLL_MULTIPLIER / 15)
+            # Scale up Tk 9.0 TouchpadScroll deltas to match physics expectations
+            # Use moderate multiplier (3) for natural feel - tuned for Tk 9.0 on macOS
+            return delta_y * 3
     
     def _get_adaptive_sensitivity(self, delta: float) -> float:
         """
@@ -1317,3 +1317,57 @@ def create_scrollable_frame(
         **kwargs
     )
     return frame, frame.get_content_frame()
+
+
+def bind_tk9_touchpad_scroll(scrollable_frame: ctk.CTkScrollableFrame, window) -> None:
+    """
+    Bind TouchpadScroll events for Tk 9.0+ on macOS.
+    
+    CTkScrollableFrame doesn't natively handle Tk 9.0's TouchpadScroll events.
+    This function adds direct binding for smooth trackpad/mouse scrolling.
+    
+    Args:
+        scrollable_frame: The CTkScrollableFrame to enable scrolling on.
+        window: The window to bind events to (use the Toplevel for popups).
+    """
+    import tkinter
+    
+    # Only needed for Tk 9.0+ on macOS
+    if sys.platform == 'win32' or tkinter.TkVersion < 9.0:
+        return
+    
+    try:
+        canvas = scrollable_frame._parent_canvas
+    except AttributeError:
+        return
+    
+    def on_scroll(event):
+        """Handle Tk 9.0 TouchpadScroll and MouseWheel events."""
+        try:
+            # Convert delta - values near 65536 are negative (scroll up)
+            delta = event.delta
+            if delta > 32767:
+                delta = delta - 65536
+            
+            # Get current scroll position
+            current = canvas.yview()
+            visible = current[1] - current[0]
+            
+            # Calculate scroll amount (multiplier tuned for natural feel)
+            scroll_amount = -delta * 0.0015
+            new_pos = current[0] + scroll_amount
+            new_pos = max(0.0, min(1.0 - visible, new_pos))
+            
+            canvas.yview_moveto(new_pos)
+        except Exception:
+            pass
+    
+    # Bind directly to the scrollable frame and its canvas
+    scrollable_frame.bind("<TouchpadScroll>", on_scroll)
+    scrollable_frame.bind("<MouseWheel>", on_scroll)
+    canvas.bind("<TouchpadScroll>", on_scroll)
+    canvas.bind("<MouseWheel>", on_scroll)
+    
+    # Also bind_all on the window as fallback
+    window.bind_all("<TouchpadScroll>", on_scroll)
+    window.bind_all("<MouseWheel>", on_scroll)

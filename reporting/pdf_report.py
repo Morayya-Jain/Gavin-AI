@@ -857,47 +857,18 @@ def generate_report(
     # Statistics section
     story.append(Paragraph("Summary Statistics", heading_style))
     
-    # Get consolidated events for display-consistent calculations
-    # Each log entry's duration will be truncated to int when displayed
-    # So category totals and active time must match the sum of displayed log entries
-    events = stats.get('events', [])
+    # Use float-precision values from stats (computed by compute_statistics)
+    # This ensures PDF totals match GUI timer exactly - truncation only at final display
+    # Previously we recalculated by summing truncated event durations, which accumulated
+    # rounding loss (up to ~1 second per event, causing multi-minute discrepancies)
+    present_secs = stats.get('present_seconds', 0)
+    away_secs = stats.get('away_seconds', 0)
+    gadget_secs = stats.get('gadget_seconds', 0)
+    screen_distraction_secs = stats.get('screen_distraction_seconds', 0)
+    paused_secs = stats.get('paused_seconds', 0)
     
-    # Calculate display-consistent category totals by summing truncated event durations
-    # This ensures: displayed category total = sum of displayed log entries for that category
-    present_secs_display = 0
-    away_secs_display = 0
-    gadget_secs_display = 0
-    screen_distraction_secs_display = 0
-    paused_secs_display = 0
-    
-    for event in events:
-        # Truncate each event duration to int (matches how it's displayed in logs)
-        duration_int = int(event.get('duration_seconds', 0))
-        event_type = event.get('type', '')
-        
-        if event_type == 'present':
-            present_secs_display += duration_int
-        elif event_type == 'away':
-            away_secs_display += duration_int
-        elif event_type == 'gadget_suspected':
-            gadget_secs_display += duration_int
-        elif event_type == 'screen_distraction':
-            screen_distraction_secs_display += duration_int
-        elif event_type == 'paused':
-            paused_secs_display += duration_int
-    
-    # Use display values for the summary table
-    present_secs = present_secs_display
-    away_secs = away_secs_display
-    gadget_secs = gadget_secs_display
-    screen_distraction_secs = screen_distraction_secs_display
-    paused_secs = paused_secs_display
-    
-    # Calculate display-consistent active time (sum of truncated categories)
-    active_secs_display = present_secs + away_secs + gadget_secs + screen_distraction_secs
-    
-    # For focus percentage, use the display values (already ints)
-    active_secs_float = float(active_secs_display)
+    # Active time from stats (float precision, matches GUI timer calculation)
+    active_secs_float = stats.get('active_seconds', 0)
     
     # Calculate focus percentage using float values for accuracy
     # This is guaranteed to be 0-100% since active_time = present + away + gadget + screen_distraction
@@ -917,7 +888,7 @@ def generate_report(
         focus_pct_str = f"{focus_pct:.1f}%"
     
     # Build table data, only including rows with non-zero values
-    # Use _format_time_seconds for display (values are already truncated ints from analytics)
+    # Use _format_time_seconds for display (truncates float to int at display time only)
     stats_data = [['Category', 'Duration']]
     
     # Track which rows we add for color coding later
@@ -946,8 +917,8 @@ def generate_report(
         stats_data.append(['Paused', _format_time_seconds(paused_secs)])
         row_types.append('paused')
     
-    # Always add Active Time (= sum of truncated individual categories for display consistency)
-    stats_data.append(['Active Time', _format_time_seconds(active_secs_display)])
+    # Always add Active Time (uses float precision, truncated only at display)
+    stats_data.append(['Active Time', _format_time_seconds(active_secs_float)])
     row_types.append('active')
     stats_data.append(['Focus Rate', focus_pct_str])
     row_types.append('focus')

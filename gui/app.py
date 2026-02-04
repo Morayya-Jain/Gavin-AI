@@ -629,7 +629,8 @@ from gui.ui_components import (
     get_screen_scale_factor,
     normalize_tk_scaling,
     setup_natural_scroll,
-    create_scrollable_frame
+    create_scrollable_frame,
+    bind_tk9_touchpad_scroll
 )
 
 # Base dimensions for scaling (larger default window) - keep for backward compat
@@ -2892,7 +2893,7 @@ class BrainDockGUI:
         """
         # Create settings window using CTkToplevel for proper CustomTkinter integration
         settings_window = ctk.CTkToplevel(self.root)
-        settings_window.title("Screen Settings")
+        settings_window.title("")  # Empty title - no text in title bar
         settings_window.configure(fg_color=COLORS["bg_primary"])
         
         # Set window icon for Windows (each Toplevel needs this explicitly)
@@ -2975,10 +2976,6 @@ class BrainDockGUI:
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
         scrollable_outer.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 10))
-        
-        # Set up natural scrolling (only on macOS/Linux with CTkScrollableFrame)
-        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
-            natural_scroller = setup_natural_scroll(scrollable_outer._scrollable, settings_window)
         
         # --- Content inside scrollable frame ---
         # Title
@@ -3173,6 +3170,57 @@ class BrainDockGUI:
             settings_window.deiconify()
             settings_window.lift()
             settings_window.focus_force()
+        
+        # Force update and set up scroll binding AFTER content is added
+        settings_window.update_idletasks()
+        
+        # Direct inline scroll binding for Tk 9.0
+        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
+            try:
+                import tkinter
+                if tkinter.TkVersion >= 9.0:
+                    _canvas = scrollable_outer._scrollable._parent_canvas
+                    
+                    # FIX: Manually set scrollregion since CTkScrollableFrame may not do it on Tk 9.0
+                    bbox = _canvas.bbox("all")
+                    if bbox:
+                        _canvas.configure(scrollregion=bbox)
+                    
+                    def _on_scroll(event, canvas=_canvas):
+                        try:
+                            delta = event.delta
+                            if delta > 32767:
+                                delta = delta - 65536
+                            
+                            # Skip very small deltas to reduce jitter
+                            if abs(delta) < 1:
+                                return "break"
+                            
+                            current = canvas.yview()
+                            visible = current[1] - current[0]
+                            
+                            # Smoother scroll with adjusted sensitivity
+                            scroll_amount = -delta * 0.001
+                            new_pos = current[0] + scroll_amount
+                            new_pos = max(0.0, min(1.0 - visible, new_pos))
+                            
+                            canvas.yview_moveto(new_pos)
+                        except:
+                            pass
+                        # Return "break" to prevent CTkScrollableFrame's internal handling
+                        return "break"
+                    
+                    # Unbind any existing scroll handlers on the canvas first
+                    try:
+                        _canvas.unbind_all("<MouseWheel>")
+                        _canvas.unbind_all("<TouchpadScroll>")
+                    except:
+                        pass
+                    
+                    settings_window.bind_all("<TouchpadScroll>", _on_scroll)
+                    settings_window.bind_all("<MouseWheel>", _on_scroll)
+            except:
+                pass
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -4246,7 +4294,7 @@ class BrainDockGUI:
         """
         # Create tutorial window using CTkToplevel for proper CustomTkinter integration
         tutorial_window = ctk.CTkToplevel(self.root)
-        tutorial_window.title("How to Use BrainDock")
+        tutorial_window.title("")  # Empty title - no text in title bar
         tutorial_window.configure(fg_color=COLORS["bg_primary"])
         
         # Set window icon for Windows (each Toplevel needs this explicitly)
@@ -4328,10 +4376,6 @@ class BrainDockGUI:
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
         scrollable_outer.pack(fill=tk.BOTH, expand=True, padx=10)
-        
-        # Set up natural scrolling (only on macOS/Linux with CTkScrollableFrame)
-        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
-            natural_scroller = setup_natural_scroll(scrollable_outer._scrollable, tutorial_window)
         
         # Tutorial sections data (icon, title, description)
         tutorial_sections = [
@@ -4459,6 +4503,57 @@ class BrainDockGUI:
             tutorial_window.deiconify()
             tutorial_window.lift()
             tutorial_window.focus_force()
+        
+        # Force update and set up scroll binding AFTER content is added
+        tutorial_window.update_idletasks()
+        
+        # Direct inline scroll binding for Tk 9.0
+        if sys.platform != "win32" and hasattr(scrollable_outer, '_scrollable'):
+            try:
+                import tkinter
+                if tkinter.TkVersion >= 9.0:
+                    _canvas = scrollable_outer._scrollable._parent_canvas
+                    
+                    # FIX: Manually set scrollregion since CTkScrollableFrame may not do it on Tk 9.0
+                    bbox = _canvas.bbox("all")
+                    if bbox:
+                        _canvas.configure(scrollregion=bbox)
+                    
+                    def _on_scroll(event, canvas=_canvas):
+                        try:
+                            delta = event.delta
+                            if delta > 32767:
+                                delta = delta - 65536
+                            
+                            # Skip very small deltas to reduce jitter
+                            if abs(delta) < 1:
+                                return "break"
+                            
+                            current = canvas.yview()
+                            visible = current[1] - current[0]
+                            
+                            # Smoother scroll with adjusted sensitivity
+                            scroll_amount = -delta * 0.001
+                            new_pos = current[0] + scroll_amount
+                            new_pos = max(0.0, min(1.0 - visible, new_pos))
+                            
+                            canvas.yview_moveto(new_pos)
+                        except:
+                            pass
+                        # Return "break" to prevent CTkScrollableFrame's internal handling
+                        return "break"
+                    
+                    # Unbind any existing scroll handlers on the canvas first
+                    try:
+                        _canvas.unbind_all("<MouseWheel>")
+                        _canvas.unbind_all("<TouchpadScroll>")
+                    except:
+                        pass
+                    
+                    tutorial_window.bind_all("<TouchpadScroll>", _on_scroll)
+                    tutorial_window.bind_all("<MouseWheel>", _on_scroll)
+            except:
+                pass
         
         logger.debug("Tutorial popup opened")
     

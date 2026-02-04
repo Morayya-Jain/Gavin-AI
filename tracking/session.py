@@ -77,6 +77,15 @@ class Session:
             duration_str = f"{hours}h {minutes}m"
         else:
             duration_str = f"{minutes}m"
+        
+        # Validate that event durations sum to session duration (helps catch timing bugs)
+        event_total = sum(e.get("duration_seconds", 0) for e in self.events)
+        gap = abs(duration - event_total)
+        if gap > 1.0:  # More than 1 second gap indicates a bug
+            logger.warning(
+                f"Timing gap detected: session={duration:.1f}s, events_total={event_total:.1f}s, "
+                f"gap={gap:.1f}s. Events may be missing time."
+            )
             
         print(f"Session ended. Duration: {duration_str}")
     
