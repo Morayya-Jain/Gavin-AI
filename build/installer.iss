@@ -9,7 +9,7 @@
 ;   1. Build the app with PyInstaller first (build_windows.ps1 handles this)
 ;   2. Run: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ;
-; The output will be: dist\BrainDock-{VERSION}-Setup.exe
+; The output will be: dist\BrainDock-Setup.exe
 ;
 ; =============================================================================
 
@@ -38,7 +38,7 @@ DefaultGroupName={#MyAppName}
 
 ; Output settings
 OutputDir=..\dist
-OutputBaseFilename=BrainDock-{#MyAppVersion}-Setup
+OutputBaseFilename=BrainDock-Setup
 ; Use zip compression for fastest installation speed
 ; Trade-off: ~20-25% larger installer but 5-10x faster to install
 Compression=zip/9

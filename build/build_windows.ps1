@@ -20,7 +20,7 @@
 #   $env:WIN_CODESIGN_PASS="certificate-password"
 #   .\build\build_windows.ps1
 #
-# Output: dist\BrainDock-{VERSION}-Setup.exe
+# Output: dist\BrainDock-Setup.exe
 #
 
 $ErrorActionPreference = "Stop"
@@ -137,6 +137,7 @@ if (Test-Path "$ProjectRoot\build\BrainDock") {
     Remove-Item -Recurse -Force "$ProjectRoot\build\BrainDock"
 }
 # Clean previous installer files
+Get-ChildItem -Path "$ProjectRoot\dist" -Filter "BrainDock-Setup.exe" -ErrorAction SilentlyContinue | Remove-Item -Force
 Get-ChildItem -Path "$ProjectRoot\dist" -Filter "BrainDock-*-Setup.exe" -ErrorAction SilentlyContinue | Remove-Item -Force
 # Clean previously generated bundled_keys.py (will be regenerated with fresh keys)
 if (Test-Path "$ProjectRoot\bundled_keys.py") {
@@ -264,14 +265,8 @@ if (Test-Path "$ProjectRoot\dist\BrainDock") {
     # Run Inno Setup compiler
     & $InnoSetup "$ScriptDir\installer.iss"
     
-    # Read version from installer.iss to ensure consistency (single source of truth)
-    $IssContent = Get-Content "$ScriptDir\installer.iss" -Raw
-    if ($IssContent -match '#define MyAppVersion "([^"]+)"') {
-        $Version = $Matches[1]
-    } else {
-        $Version = "1.0.0"  # Fallback
-    }
-    $InstallerName = "BrainDock-$Version-Setup.exe"
+    # Installer name is fixed (version embedded inside, not in filename)
+    $InstallerName = "BrainDock-Setup.exe"
     $InstallerPath = "$ProjectRoot\dist\$InstallerName"
     
     if (Test-Path $InstallerPath) {
