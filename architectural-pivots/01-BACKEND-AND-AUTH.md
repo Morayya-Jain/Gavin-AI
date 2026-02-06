@@ -492,6 +492,132 @@ This approach is similar to how Spotify, Netflix, and smart TV apps handle devic
 
 **Recommended approach for Phase 2:** Start with the manual code entry flow. It supports all auth methods, is the most secure, and requires zero platform-specific configuration. See `03-WEB-DASHBOARD-MIGRATION.md` → "Desktop App Deep Linking" for all three options evaluated.
 
+### Linking Code Infrastructure (Required for Manual Code Entry)
+
+The manual code entry flow requires a server-side mechanism to generate and validate short-lived codes. Add this table and Edge Function:
+
+```sql
+-- Temporary linking codes for desktop app authentication
+-- Codes expire after 5 minutes and are single-use
+CREATE TABLE public.linking_codes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    code TEXT NOT NULL UNIQUE,          -- Short code like "ABCD-1234"
+    access_token TEXT NOT NULL,         -- Supabase session access token
+    refresh_token TEXT NOT NULL,        -- Supabase session refresh token
+    expires_at TIMESTAMPTZ NOT NULL,    -- Auto-expire after 5 minutes
+    used BOOLEAN DEFAULT FALSE,         -- Single-use: mark used after exchange
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS: No client-side access — only Edge Functions use this table via service role
+ALTER TABLE public.linking_codes ENABLE ROW LEVEL SECURITY;
+-- No SELECT/INSERT policies for anon/authenticated roles (intentional)
+-- Only the service role key (Edge Functions) can read/write this table
+```
+
+**Edge Function: Generate linking code** (called by the website after login with `?source=desktop`):
+
+```typescript
+// supabase/functions/generate-linking-code/index.ts
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+serve(async (req) => {
+  const { access_token, refresh_token } = await req.json();
+  
+  // Verify the token is valid
+  const userClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!
+  );
+  const { data: { user }, error } = await userClient.auth.getUser(access_token);
+  if (error || !user) {
+    return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
+  }
+  
+  // Generate a short, human-friendly code
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No 0/O/1/I to avoid confusion
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+    if (i === 3) code += "-"; // Format: ABCD-1234
+  }
+  
+  const adminClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+  
+  // Store the code (expires in 5 minutes)
+  await adminClient.from("linking_codes").insert({
+    user_id: user.id,
+    code,
+    access_token,
+    refresh_token,
+    expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  });
+  
+  return new Response(JSON.stringify({ code }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+```
+
+**Edge Function: Exchange linking code** (called by the desktop app):
+
+```typescript
+// supabase/functions/exchange-linking-code/index.ts
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+serve(async (req) => {
+  const { code } = await req.json();
+  
+  const adminClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+  
+  // Find valid, unused, non-expired code
+  const { data, error } = await adminClient
+    .from("linking_codes")
+    .select("access_token, refresh_token, user_id")
+    .eq("code", code.toUpperCase().trim())
+    .eq("used", false)
+    .gt("expires_at", new Date().toISOString())
+    .single();
+  
+  if (error || !data) {
+    return new Response(
+      JSON.stringify({ error: "Invalid or expired code" }),
+      { status: 400 }
+    );
+  }
+  
+  // Mark code as used (single-use)
+  await adminClient
+    .from("linking_codes")
+    .update({ used: true })
+    .eq("code", code.toUpperCase().trim());
+  
+  return new Response(JSON.stringify({
+    access_token: data.access_token,
+    refresh_token: data.refresh_token,
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+```
+
+Deploy both:
+```bash
+supabase functions deploy generate-linking-code
+supabase functions deploy exchange-linking-code
+```
+
 ---
 
 ## Edge Functions

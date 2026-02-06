@@ -158,7 +158,7 @@ class SessionEngine:
     Callbacks:
     - on_status_change(status: str, text: str) — called when detection status changes
     - on_timer_tick(elapsed_seconds: int) — called every second with active duration
-    - on_session_ended(report_path: Path | None) — called when session stops
+    - on_session_ended(report_path: Optional[Path]) — called when session stops
     - on_error(error_type: str, message: str) — called on errors (camera, permissions, etc.)
     - on_alert(level: int, message: str) — called for unfocused alerts
     """
@@ -199,7 +199,7 @@ class SessionEngine:
         Stop the current session and generate report.
         
         Returns:
-            {"success": bool, "report_path": Path | None, "session_data": dict | None}
+            {"success": bool, "report_path": Optional[Path], "session_data": Optional[dict]}
             session_data contains summary for Supabase upload
         """
         # Thread cleanup (extracted from _stop_session)
@@ -235,7 +235,7 @@ class SessionEngine:
         """
         pass
     
-    def get_last_report_path(self) -> Path | None:
+    def get_last_report_path(self) -> Optional[Path]:
         """
         Get the path to the most recently generated report.
         Persisted across app restarts via a local file.
@@ -280,7 +280,7 @@ class SessionEngine:
         # Callbacks — set by the menu bar app
         self.on_status_change = None   # (status: str, text: str) -> None
         self.on_timer_tick = None      # (elapsed_seconds: int) -> None
-        self.on_session_ended = None   # (report_path: Path | None) -> None
+        self.on_session_ended = None   # (report_path: Optional[Path]) -> None
         self.on_error = None           # (error_type: str, message: str) -> None
         self.on_alert = None           # (level: int, message: str) -> None
 
@@ -451,6 +451,9 @@ class BrainDockMenuBar(rumps.App):
 
 ```python
 # menubar/windows_app.py
+import sys
+import threading
+import webbrowser
 import pystray
 from PIL import Image
 from core.engine import SessionEngine
@@ -461,7 +464,12 @@ class BrainDockTray:
     def __init__(self):
         self.engine = SessionEngine()
         
-        # Load tray icon
+        # Set engine callbacks
+        self.engine.on_status_change = self._on_status_change
+        self.engine.on_session_ended = self._on_session_ended
+        self.engine.on_error = self._on_error
+        
+        # Load tray icon (use .ico on Windows for best quality)
         self.icon_image = Image.open("assets/menu_icon.png")
         
         # Build menu
@@ -471,15 +479,27 @@ class BrainDockTray:
             title="BrainDock - Ready",
             menu=self._build_menu()
         )
+        
+        # Start timer thread for updating tooltip/status during sessions
+        self._timer_running = True
+        self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
     
     def _build_menu(self):
-        """Build the tray menu."""
+        """Build the tray context menu (right-click on Windows)."""
         return pystray.Menu(
-            pystray.MenuItem("● Ready to start", None, enabled=False),
+            pystray.MenuItem(
+                lambda item: self._get_status_text(),
+                None, enabled=False
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "▶ Start Session",
+                lambda item: "■ Stop Session" if self.engine.is_running else "▶ Start Session",
                 self.toggle_session
+            ),
+            pystray.MenuItem(
+                lambda item: "▶ Resume" if self.engine.is_paused else "⏸ Pause",
+                self.toggle_pause,
+                visible=lambda item: self.engine.is_running
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Mode", pystray.Menu(
@@ -494,10 +514,65 @@ class BrainDockTray:
             pystray.MenuItem("Quit BrainDock", self.quit_app),
         )
     
+    def _timer_loop(self):
+        """Background thread to update tray tooltip with session timer."""
+        import time
+        while self._timer_running:
+            if self.engine.is_running:
+                status = self.engine.get_status()
+                elapsed = status.get("elapsed_seconds", 0)
+                h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
+                self.icon.title = f"BrainDock - {h:02d}:{m:02d}:{s:02d}"
+            time.sleep(1)
+    
+    def _on_status_change(self, status: str, text: str):
+        """Update tray tooltip on status change."""
+        self.icon.title = f"BrainDock - {text}"
+    
+    def toggle_session(self, icon, item):
+        """Start or stop a session."""
+        if not self.engine.is_running:
+            result = self.engine.start_session()
+            if not result["success"]:
+                # pystray has no built-in dialogs — use Windows notification balloon
+                self.icon.notify(result.get("error", "Failed to start"), "BrainDock Error")
+        else:
+            self.engine.stop_session()
+    
+    def toggle_pause(self, icon, item):
+        """Pause or resume session."""
+        if self.engine.is_paused:
+            self.engine.resume_session()
+        else:
+            self.engine.pause_session()
+    
+    def open_dashboard(self, icon, item):
+        """Open web dashboard in browser."""
+        webbrowser.open("https://braindock.com/dashboard")
+    
+    def quit_app(self, icon, item):
+        """Clean up and quit."""
+        self._timer_running = False
+        if self.engine.is_running:
+            self.engine.stop_session()
+        self.engine.cleanup()
+        self.icon.stop()
+    
     def run(self):
         """Start the tray application."""
+        self._timer_thread.start()
         self.icon.run()
 ```
+
+### Windows-Specific Notes
+
+**Differences from macOS menu bar:**
+- **Right-click menu:** On Windows, the tray menu opens on right-click (not left-click like macOS). Left-click could optionally show a small popup window.
+- **No dynamic menu item text updates:** `pystray` uses lambda functions for dynamic text (e.g., `lambda item: "Stop" if running else "Start"`). The menu re-evaluates these each time it opens.
+- **Tooltip for timer:** Windows tray icons have hover tooltips (`icon.title`). The timer updates via a background thread, so hovering the icon shows the current session time.
+- **Notifications:** `pystray` supports Windows notification balloons via `icon.notify()`. Use these for errors and alerts instead of dialog boxes.
+- **Auth code input:** `pystray` has no built-in input dialogs. For the login code prompt, use a minimal `tkinter.simpledialog.askstring()` (tkinter is included with Python and doesn't require CustomTkinter). Alternatively, tell the user to paste the code on the website and have the app poll for it.
+- **No Dock equivalent to hide:** Windows tray apps don't appear in the taskbar by default when using pystray. If the user launches the `.exe` while the tray is already running, `instance_lock.py` handles this (shows "already running" and exits).
 
 ### Cross-Platform Entry Point
 
@@ -528,19 +603,32 @@ def run_menubar_app():
 - `pystray` is cross-platform (works on macOS too) and is more actively maintained. If `rumps` breaks on a future macOS version, swap to `pystray` for macOS as well. The engine's callback-based architecture means changing the menu bar library requires only rewriting `menubar/macos_app.py` (~150 lines), not the engine.
 - Alternatively, `rumps` is a thin wrapper around `PyObjC` — if it breaks, the fix is usually small and can be patched locally.
 
-### Menu Bar Icon Design
+### Menu Bar / Tray Icon Design
 
-The menu bar icon should be:
+**macOS (menu bar):**
 - **Size:** 22x22 pixels (44x44 for Retina/HiDPI)
 - **Format:** PNG with transparency
-- **Style:** Simple, monochrome (black on light backgrounds, white on dark) — macOS convention
+- **Style:** Monochrome (black on light, white on dark) — macOS menu bar convention
 - **Template image:** Set `template=True` in rumps so macOS automatically handles dark/light mode
-- **States:** Consider 3 icon variants:
+- **States:** Consider 3 icon variants using different template images:
   - Default (idle): Standard brain/dock icon
-  - Active (tracking): Same icon with a small green dot or subtle animation indicator
+  - Active (tracking): Same icon with a small green dot indicator
   - Paused: Same icon with yellow/amber indicator
 
-### macOS App Behavior (LSUIElement)
+**Windows (system tray):**
+- **Size:** 16x16 pixels (32x32 for high-DPI displays). Windows auto-scales from larger icons.
+- **Format:** `.ico` file preferred (supports multiple resolutions in one file: 16x16, 32x32, 48x48). PNG also works via Pillow but `.ico` gives the best quality.
+- **Style:** Can be full-color (Windows tray icons are not restricted to monochrome)
+- **States:** Change the icon image at runtime via `self.icon.icon = new_image` for idle/tracking/paused states
+
+**Create these icon assets:**
+- `assets/menu_icon.png` — macOS template image (monochrome, 44x44)
+- `assets/tray_icon.ico` — Windows tray icon (multi-resolution .ico)
+- `assets/tray_icon_active.ico` — Windows active state (optional)
+
+### Platform-Specific App Behavior
+
+**macOS: No Dock Icon (LSUIElement)**
 
 The app should NOT show in the Dock. This is controlled by `LSUIElement` in `Info.plist`:
 
@@ -551,11 +639,23 @@ The app should NOT show in the Dock. This is controlled by `LSUIElement` in `Inf
 
 When the user opens BrainDock from Applications folder or Spotlight:
 - The menu bar icon activates (if not already running)
-- No window opens
-- No Dock icon appears
+- No window opens, no Dock icon appears
 - The menu bar dropdown is the only interface
+- If already running, `instance_lock.py` detects this and exits silently (or activates the existing menu bar)
 
-This is standard behavior for apps like Bartender, Rectangle, iStat Menus, etc.
+This is standard behavior for apps like Bartender, Rectangle, iStat Menus.
+
+**Windows: No Taskbar Window**
+
+The app runs as a system tray icon only — no taskbar window. This is the default behavior with pystray (no window is created). PyInstaller's `--noconsole` flag ensures no terminal window appears either.
+
+When the user launches BrainDock from Start Menu, Desktop shortcut, or File Explorer:
+- The system tray icon appears (bottom-right, near the clock)
+- No window opens, no taskbar entry
+- Right-click the tray icon to see the menu
+- If already running, `instance_lock.py` detects this and shows a brief notification ("BrainDock is already running in the system tray") then exits
+
+**Optional: Run at startup.** The Windows installer can add a registry entry to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so BrainDock starts automatically when the user logs in. This is common for tray apps and should be an opt-in checkbox during installation.
 
 ---
 
@@ -681,9 +781,13 @@ When the app launches:
 
 When user clicks "Log In":
 1. Open `https://braindock.com/auth/login?source=desktop` in browser
-2. User completes login on website
-3. Website provides auth tokens back to the app (via deep link `braindock://` or localhost callback)
-4. App stores tokens and refreshes menu
+2. User logs in on the website (email/password or Google OAuth)
+3. Website displays a short-lived linking code (e.g., "ABCD-1234")
+4. User enters the code in the desktop app's prompt (e.g., via `rumps.Window` input dialog)
+5. App exchanges the code for Supabase session tokens via a secure API call
+6. App stores tokens locally and refreshes menu
+
+> **Note:** This matches the manual code entry flow documented in `01-BACKEND-AND-AUTH.md` and recommended as Option C in `03-WEB-DASHBOARD-MIGRATION.md`. See those documents for the full auth flow and security rationale.
 
 ### Device Registration
 
@@ -1036,11 +1140,20 @@ Key changes:
 - Add rumps/pystray hidden imports
 - Update icon for menu bar (template icon)
 
-### Windows Build
+### Windows Build (build/build_windows.ps1 and installer.iss)
 
-- Update for pystray system tray
-- No Electron/CEF dependency
-- Potentially use Inno Setup to create installer that puts app in Start Menu + system startup
+Key changes:
+- Remove CustomTkinter from PyInstaller bundle
+- Add pystray to PyInstaller bundle (hidden import: `pystray._win32`)
+- Use `--noconsole` flag (no terminal window when running)
+- Bundle `.ico` format icon for Windows system tray (pystray prefers `.ico` on Windows)
+- Smaller bundle size expected
+- Update Inno Setup script (`installer.iss`) to:
+  - Install to `C:\Program Files\BrainDock\` (or user choice)
+  - Create Start Menu shortcut
+  - Optionally add to Windows startup (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` registry key) so the tray icon runs on login
+  - Register uninstaller
+- Ensure `instance_lock.py` works correctly on Windows (file locking behavior differs from macOS)
 
 ---
 

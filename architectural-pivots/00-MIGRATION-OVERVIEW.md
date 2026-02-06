@@ -17,7 +17,8 @@
 9. [Cost Breakdown](#cost-breakdown)
 10. [Current Codebase Map](#current-codebase-map)
 11. [Risk Assessment](#risk-assessment)
-12. [Key Principles](#key-principles)
+12. [Cross-Platform Requirement](#cross-platform-requirement)
+13. [Key Principles](#key-principles)
 
 ---
 
@@ -385,6 +386,32 @@ All of `camera/`, `screen/`, `tracking/`, `reporting/`, `data/`, `tests/`.
 | **Offline degradation** | LOW | Screen-only mode works fully offline. Camera modes need internet for Vision API (already the case). Settings cached locally after first sync. |
 | **Supabase vendor lock-in** | LOW | Supabase uses standard PostgreSQL. Data is exportable. Auth is standard JWT. You could self-host Supabase or migrate to any PostgreSQL host. |
 | **Two codebases to maintain** | MEDIUM | The desktop app becomes simpler (~2,000 lines for engine + ~300 lines for menu bar vs. current 10,000+ lines of GUI). Net reduction in complexity. |
+
+---
+
+## Cross-Platform Requirement
+
+**This entire migration must work on both macOS and Windows.** Every component is designed for both platforms:
+
+| Component | macOS | Windows |
+|-----------|-------|---------|
+| Menu bar / tray app | `rumps` (native macOS menu bar) | `pystray` (Windows system tray) |
+| App icon behavior | `LSUIElement` — no Dock icon | No taskbar window — tray only |
+| Icon format | PNG template image (monochrome, auto dark/light) | `.ico` multi-resolution (full color) |
+| Timer updates | `@rumps.timer(1)` decorator | Background daemon thread with `time.sleep(1)` |
+| Dialogs/alerts | `rumps.alert()`, `rumps.Window()` for input | `icon.notify()` for notifications, `tkinter.simpledialog` for input |
+| Auth code input | `rumps.Window()` text input | `tkinter.simpledialog.askstring()` (no CustomTkinter needed) |
+| Camera permissions | `pyobjc` AVFoundation check | Let detection thread handle errors |
+| Screen permissions | Accessibility check via AppleScript | pywinauto (existing) |
+| User data directory | `~/Library/Application Support/BrainDock/` | `%APPDATA%\BrainDock\` |
+| Run at startup | Login Items (optional) | Registry key in `HKCU\...\Run` (optional, via installer) |
+| Build output | `.app` bundle → `.dmg` | `.exe` → Inno Setup installer |
+| Camera library | OpenCV (same) | OpenCV (same) |
+| Vision API | OpenAI/Gemini Python SDK (same) | Same |
+| PDF generation | ReportLab (same) | Same |
+| Auth / sync | Supabase Python client (same) | Same |
+
+**The `core/engine.py` module is 100% platform-agnostic.** It has zero platform-specific code. All platform differences are isolated to `menubar/macos_app.py` and `menubar/windows_app.py`. The engine's callback pattern ensures that switching or updating a platform's UI layer never touches the detection logic.
 
 ---
 
