@@ -5,7 +5,7 @@ Supports multiple vision providers (OpenAI, Gemini) via factory pattern.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Set
 
 import config
 
@@ -15,12 +15,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def create_vision_detector() -> "VisionDetectorProtocol":
+def create_vision_detector(enabled_gadgets: Optional[Set[str]] = None) -> "VisionDetectorProtocol":
     """
     Create a vision detector based on the configured provider.
     
     Uses VISION_PROVIDER from config to determine which detector to instantiate.
     Supported providers: "openai" (default), "gemini"
+    
+    Args:
+        enabled_gadgets: Set of gadget type ids to detect as distractions (defaults to config.DEFAULT_ENABLED_GADGETS)
     
     Returns:
         VisionDetectorProtocol: The appropriate vision detector instance
@@ -33,17 +36,17 @@ def create_vision_detector() -> "VisionDetectorProtocol":
     if provider == "gemini":
         from camera.gemini_detector import GeminiVisionDetector
         logger.info("Using Gemini vision provider")
-        return GeminiVisionDetector()
+        return GeminiVisionDetector(enabled_gadgets=enabled_gadgets)
     elif provider == "openai":
         from camera.vision_detector import VisionDetector
         logger.info("Using OpenAI vision provider")
-        return VisionDetector()
+        return VisionDetector(enabled_gadgets=enabled_gadgets)
     else:
         # Unknown provider - log warning and fallback to OpenAI
         from camera.vision_detector import VisionDetector
         logger.warning(f"Unknown vision provider '{provider}', defaulting to OpenAI. "
                       f"Supported providers: 'openai', 'gemini'")
-        return VisionDetector()
+        return VisionDetector(enabled_gadgets=enabled_gadgets)
 
 
 def get_event_type(detection_state: dict) -> str:

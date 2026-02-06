@@ -243,6 +243,17 @@ EVENT_GADGET_SUSPECTED = "gadget_suspected"
 EVENT_PAUSED = "paused"  # User manually paused the session
 EVENT_SCREEN_DISTRACTION = "screen_distraction"  # Distracting website/app detected
 
+# Gadget detection presets (user can enable/disable which gadgets count as distractions)
+GADGET_PRESETS = {
+    "phone": {"name": "Phone", "description": "Smartphones (5-7 inch devices)"},
+    "tablet": {"name": "Tablet / iPad", "description": "Tablets and iPads (8+ inch)"},
+    "controller": {"name": "Game Controller", "description": "PS5, Xbox, generic controllers"},
+    "tv": {"name": "TV / TV Remote", "description": "Television and remote control usage"},
+    "nintendo_switch": {"name": "Nintendo Switch", "description": "Nintendo Switch handheld/docked"},
+    "smartwatch": {"name": "Smartwatch", "description": "Apple Watch, Fitbit, Galaxy Watch"},
+}
+DEFAULT_ENABLED_GADGETS = {"phone"}  # Only phone enabled by default
+
 # Monitoring modes
 MODE_CAMERA_ONLY = "camera_only"  # Default - only camera monitoring
 MODE_SCREEN_ONLY = "screen_only"  # Only screen monitoring (no camera)

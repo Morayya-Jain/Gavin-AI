@@ -3006,7 +3006,7 @@ class BrainDockGUI:
         # Title
         title = ctk.CTkLabel(
             content_frame,
-            text="Screen Settings",
+            text="Settings",
             font=self._font_to_tuple(self.font_title),
             text_color=COLORS["accent_primary"]
         )
@@ -3014,11 +3014,61 @@ class BrainDockGUI:
         
         subtitle = ctk.CTkLabel(
             content_frame,
-            text="Select sites/apps categorised as distractions",
+            text="Configure distraction detection settings",
             font=self._font_to_tuple(self.font_small),
             text_color=COLORS["text_secondary"]
         )
         subtitle.pack(pady=(0, 15), padx=15)
+        
+        # --- Gadget Detection section ---
+        gadget_label = ctk.CTkLabel(
+            content_frame,
+            text="Gadget Detection",
+            font=(get_font_sans(), 18, "bold"),
+            text_color=COLORS["text_primary"],
+            pady=4,
+        )
+        gadget_label.pack(anchor="w", pady=(0, 5), padx=15)
+        
+        gadget_help = ctk.CTkLabel(
+            content_frame,
+            text="Select gadgets to detect as distractions via camera",
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
+        )
+        gadget_help.pack(anchor="w", pady=(0, 5), padx=15)
+        
+        self.gadget_vars = {}
+        gadget_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
+        gadget_frame.pack(fill=tk.X, pady=(0, 0), padx=15)
+        gadget_frame.columnconfigure(0, weight=1)
+        gadget_frame.columnconfigure(1, weight=1)
+        
+        gadget_order = [
+            ("phone", 0, 0),
+            ("tablet", 0, 1),
+            ("controller", 1, 0),
+            ("tv", 1, 1),
+            ("nintendo_switch", 2, 0),
+            ("smartwatch", 2, 1),
+        ]
+        for gadget_id, row, col in gadget_order:
+            if gadget_id not in config.GADGET_PRESETS:
+                continue
+            preset = config.GADGET_PRESETS[gadget_id]
+            var = tk.BooleanVar(value=gadget_id in self.blocklist.enabled_gadgets)
+            self.gadget_vars[gadget_id] = var
+            cb = ctk.CTkCheckBox(
+                gadget_frame,
+                text=preset["name"],
+                variable=var,
+                font=(get_font_sans(), 16),
+                text_color=COLORS["text_primary"],
+                fg_color=COLORS["accent_primary"],
+                hover_color=COLORS["text_secondary"],
+                border_color=COLORS["text_secondary"],
+            )
+            cb.grid(row=row, column=col, sticky="w", pady=3, padx=(0, 20))
         
         # Quick Select section
         quick_sites_label = ctk.CTkLabel(
@@ -3027,7 +3077,7 @@ class BrainDockGUI:
             font=(get_font_sans(), 18, "bold"),
             text_color=COLORS["text_primary"]
         )
-        quick_sites_label.pack(anchor="w", pady=(0, 10), padx=15)
+        quick_sites_label.pack(anchor="w", pady=(25, 10), padx=15)
         
         # Quick site toggles - two-column layout
         self.quick_site_vars = {}
@@ -4272,6 +4322,11 @@ class BrainDockGUI:
         # Update AI fallback setting
         self.use_ai_fallback = self.ai_fallback_var.get()
         
+        # Update enabled gadgets from checkboxes
+        self.blocklist.enabled_gadgets = {
+            gadget_id for gadget_id, var in getattr(self, "gadget_vars", {}).items() if var.get()
+        }
+        
         # Save to file
         self.blocklist_manager.save(self.blocklist)
         
@@ -4290,7 +4345,7 @@ class BrainDockGUI:
         
         if messages:
             messagebox.showinfo(
-                "Screen Settings Saved",
+                "Settings Saved",
                 "\n".join(messages) + "\n\nSettings saved successfully."
             )
         
@@ -5417,7 +5472,7 @@ class BrainDockGUI:
         Also handles unfocussed alerts at configured thresholds and usage tracking.
         """
         try:
-            detector = create_vision_detector()
+            detector = create_vision_detector(enabled_gadgets=self.blocklist.enabled_gadgets)
             
             with CameraCapture() as camera:
                 if not camera.is_opened:

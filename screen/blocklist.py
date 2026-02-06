@@ -8,6 +8,8 @@ for distraction detection during focus sessions.
 import json
 import logging
 from pathlib import Path
+
+import config
 from typing import Dict, List, Set, Tuple, Optional, Any
 from dataclasses import dataclass, field
 
@@ -240,6 +242,7 @@ class Blocklist:
     
     enabled_categories: Set[str] = field(default_factory=set)
     enabled_quick_sites: Set[str] = field(default_factory=set)
+    enabled_gadgets: Set[str] = field(default_factory=set)
     custom_urls: List[str] = field(default_factory=list)
     custom_apps: List[str] = field(default_factory=list)
     # Legacy field for backward compatibility (migrated on load)
@@ -258,6 +261,10 @@ class Blocklist:
         # Enable all 6 quick sites by default
         if not self.enabled_quick_sites:
             self.enabled_quick_sites = set(QUICK_SITES.keys())
+        
+        # Default enabled gadgets (only phone if empty)
+        if not self.enabled_gadgets:
+            self.enabled_gadgets = set(config.DEFAULT_ENABLED_GADGETS)
         
         # Migrate legacy custom_patterns to appropriate fields
         if self.custom_patterns:
@@ -765,6 +772,7 @@ class Blocklist:
         return {
             "enabled_categories": list(self.enabled_categories),
             "enabled_quick_sites": list(self.enabled_quick_sites),
+            "enabled_gadgets": list(self.enabled_gadgets),
             "custom_urls": self.custom_urls,
             "custom_apps": self.custom_apps,
             # Don't save legacy custom_patterns - they should be migrated
@@ -786,6 +794,7 @@ class Blocklist:
         return cls(
             enabled_categories=set(data.get("enabled_categories", [])),
             enabled_quick_sites=set(data.get("enabled_quick_sites", [])),
+            enabled_gadgets=set(data.get("enabled_gadgets", [])),
             custom_urls=data.get("custom_urls", []),
             custom_apps=data.get("custom_apps", []),
             # Load legacy custom_patterns for migration (will be migrated in __post_init__)

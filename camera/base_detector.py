@@ -244,6 +244,7 @@ class VisionDetectorProtocol(Protocol):
     
     Both OpenAI and Gemini detectors must implement these methods
     to ensure consistent behaviour across providers.
+    Implementations may also have an enabled_gadgets attribute (set of gadget type ids to detect).
     """
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:

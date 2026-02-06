@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import logging
 import socket
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Set
 
 import google.generativeai as genai
 from PIL import Image
@@ -41,16 +41,23 @@ class GeminiVisionDetector:
     - Device face-down or screen off on table: NOT a distraction
     """
     
-    def __init__(self, api_key: Optional[str] = None, vision_model: Optional[str] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        vision_model: Optional[str] = None,
+        enabled_gadgets: Optional[Set[str]] = None,
+    ):
         """
         Initialize Gemini vision detector.
         
         Args:
             api_key: Gemini API key (defaults to config.GEMINI_API_KEY)
             vision_model: Vision model to use (defaults to config.GEMINI_VISION_MODEL)
+            enabled_gadgets: Set of gadget type ids to detect as distractions (defaults to config.DEFAULT_ENABLED_GADGETS)
         """
         self.api_key = api_key or config.GEMINI_API_KEY
         self.vision_model = vision_model or config.GEMINI_VISION_MODEL
+        self.enabled_gadgets = enabled_gadgets if enabled_gadgets is not None else set(config.DEFAULT_ENABLED_GADGETS)
         
         if not self.api_key:
             raise ValueError("Gemini API key required for vision detection! Set GEMINI_API_KEY in .env")
@@ -102,14 +109,9 @@ class GeminiVisionDetector:
     def _build_system_prompt(self) -> str:
         """
         Build the system prompt with all detection rules.
-        
-        Returns:
-            System prompt string with all detection instructions
+        Prompt is dynamic based on enabled_gadgets: only selected gadget types are detected as distractions.
         """
-        return """You are a focus tracking AI analyzing webcam frames. Respond with ONLY valid JSON.
-
-RESPONSE FORMAT (no other text):
-{"person_present": true/false, "at_desk": true/false, "gadget_visible": true/false, "gadget_confidence": 0.0-1.0, "distraction_type": "phone"/"tablet"/"controller"/"tv"/"wearable"/"none"}
+        base = """You are a focus tracking AI analyzing webcam frames. Respond with ONLY valid JSON.
 
 PRESENCE DETECTION (person_present):
 - TRUE: Any human body part visible (face, torso, arms, hands, etc.)
@@ -119,8 +121,31 @@ DESK PROXIMITY (at_desk) - LENIENT, DISTANCE-BASED:
 - TRUE: Person is at or near their desk/work area (sitting, leaning back, standing briefly)
 - FALSE: Person appears small/distant (in background, across room)
 When in doubt, lean toward at_desk=true.
+"""
+        if not self.enabled_gadgets:
+            return base + """
+RESPONSE FORMAT (no other text):
+{"person_present": true/false, "at_desk": true/false, "gadget_visible": false, "gadget_confidence": 0.0, "distraction_type": "none"}
 
-=== CRITICAL: SMARTWATCH/WEARABLE EXCLUSION ===
+GADGET DETECTION: DISABLED. Always return gadget_visible=false, gadget_confidence=0.0, distraction_type="none".
+
+RULES:
+- If person_present=false, then at_desk=false
+"""
+        # Build distraction_type options: enabled types (smartwatch -> "wearable") + "none"
+        type_options = [
+            "wearable" if g == "smartwatch" else g for g in sorted(self.enabled_gadgets)
+        ] + ["none"]
+        types_str = "/".join(f'"{t}"' for t in type_options)
+        response_format = (
+            f'RESPONSE FORMAT (no other text):\n{{"person_present": true/false, "at_desk": true/false, '
+            f'"gadget_visible": true/false, "gadget_confidence": 0.0-1.0, "distraction_type": {types_str}}}\n\n'
+        )
+        prompt = base + response_format
+
+        # Smartwatch: either exclude (not enabled) or detect (enabled)
+        if "smartwatch" not in self.enabled_gadgets:
+            prompt += """=== CRITICAL: SMARTWATCH/WEARABLE EXCLUSION ===
 NEVER flag smartwatches or wearables as distractions!
 
 Visual identification of WEARABLES (NOT distractions):
@@ -131,7 +156,17 @@ Visual identification of WEARABLES (NOT distractions):
 
 If you see a wrist-worn device: distraction_type="wearable", gadget_visible=false
 
-=== PHONE/TABLET IDENTIFICATION ===
+"""
+        else:
+            prompt += """=== SMARTWATCH DETECTION ===
+Smartwatches ARE distractions when the person is looking at or interacting with the wrist device.
+Visual identification: small device (1-2 inches) on wrist with band. Flag as gadget_visible=true, distraction_type="wearable" when actively used (glancing at, tapping).
+
+"""
+
+        # Phone/tablet identification only if at least one is enabled
+        if "phone" in self.enabled_gadgets or "tablet" in self.enabled_gadgets:
+            prompt += """=== PHONE/TABLET IDENTIFICATION ===
 Visual identification of PHONES (5-7 inch rectangular devices):
 - Held in ONE or BOTH HANDS, not attached to body
 - Larger than a watch, smaller than a tablet
@@ -141,9 +176,13 @@ Visual identification of TABLETS (8+ inch devices):
 - Large rectangular screen held in hands or propped up
 - iPad, Android tablet, e-reader
 
-GADGET DETECTION RULES:
+"""
 
-PHONE/TABLET IN HANDS = DISTRACTION:
+        prompt += """GADGET DETECTION RULES:
+
+"""
+        if "phone" in self.enabled_gadgets or "tablet" in self.enabled_gadgets:
+            prompt += """PHONE/TABLET IN HANDS = DISTRACTION:
 - Device held in hands (not on wrist) = gadget_visible=true
 - Screen state doesn't matter (on/off/dark)
 - Gaze direction doesn't matter
@@ -151,26 +190,65 @@ PHONE/TABLET IN HANDS = DISTRACTION:
 PHONE/TABLET ON TABLE = Only if actively viewing:
 - Screen visibly lit AND user clearly looking at it
 
-DETECT (gadget_visible=true, confidence >= 0.8):
-1. Phone held in hands (5-7 inch device, not wrist-worn)
-2. Tablet held in hands (8+ inch device)
-3. Game controller being gripped
+"""
 
-DETECT with lower confidence (0.6-0.7):
+        # DETECT list - only enabled types
+        detect_items = []
+        if "phone" in self.enabled_gadgets:
+            detect_items.append("Phone held in hands (5-7 inch device, not wrist-worn)")
+        if "tablet" in self.enabled_gadgets:
+            detect_items.append("Tablet held in hands (8+ inch device)")
+        if "controller" in self.enabled_gadgets:
+            detect_items.append("Game controller being gripped")
+        if "tv" in self.enabled_gadgets:
+            detect_items.append("TV being watched or TV remote in use")
+        if "nintendo_switch" in self.enabled_gadgets:
+            detect_items.append("Nintendo Switch handheld or in use")
+        if "smartwatch" in self.enabled_gadgets:
+            detect_items.append("Smartwatch/wearable being looked at or interacted with (wrist device)")
+        detect_lines = [f"{i+1}. {t}" for i, t in enumerate(detect_items)]
+        if detect_lines:
+            prompt += "DETECT (gadget_visible=true, confidence >= 0.8):\n" + "\n".join(detect_lines) + "\n\n"
+        if "phone" in self.enabled_gadgets:
+            prompt += """DETECT with lower confidence (0.6-0.7):
 - Phone on table with lit screen AND user staring at it
 
-DO NOT DETECT (gadget_visible=false):
-- Wrist-worn devices (watches, fitness trackers) - use distraction_type="wearable"
-- Phone lying on table (not in hands)
-- Phone on table with screen off
-- Device face-down
-- Person working on computer/laptop
-- Unclear objects (when in doubt, don't detect)
+"""
 
-RULES:
+        # DO NOT DETECT: generic + disabled types
+        do_not = []
+        if "smartwatch" not in self.enabled_gadgets:
+            do_not.append("- Wrist-worn devices (watches, fitness trackers) - use distraction_type=\"wearable\"")
+        if "phone" in self.enabled_gadgets or "tablet" in self.enabled_gadgets:
+            do_not.append("- Phone lying on table (not in hands)")
+            do_not.append("- Phone on table with screen off")
+        do_not.extend([
+            "- Device face-down",
+            "- Person working on computer/laptop",
+            "- Unclear objects (when in doubt, don't detect)",
+        ])
+        if "phone" not in self.enabled_gadgets:
+            do_not.append("- Phones/smartphones - ignore even if visible")
+        if "tablet" not in self.enabled_gadgets:
+            do_not.append("- Tablets/iPads - ignore even if visible")
+        if "controller" not in self.enabled_gadgets:
+            do_not.append("- Game controllers - ignore even if visible")
+        if "tv" not in self.enabled_gadgets:
+            do_not.append("- TV or TV remote - ignore even if visible")
+        if "nintendo_switch" not in self.enabled_gadgets:
+            do_not.append("- Nintendo Switch - ignore even if visible")
+        if "smartwatch" in self.enabled_gadgets:
+            do_not.append("- Wrist device not being actively used - ignore")
+        prompt += "DO NOT DETECT (gadget_visible=false):\n" + "\n".join(do_not) + "\n\n"
+
+        prompt += """RULES:
 - If person_present=false, then at_desk=false
-- Wrist-worn device = NEVER a distraction (wearable type)
-- Phone in hands = distraction (not wrist = not a watch)"""
+"""
+        if "smartwatch" not in self.enabled_gadgets:
+            prompt += "- Wrist-worn device = NEVER a distraction (wearable type)\n"
+        if "phone" in self.enabled_gadgets:
+            prompt += "- Phone in hands = distraction (not wrist = not a watch)\n"
+        return prompt
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
