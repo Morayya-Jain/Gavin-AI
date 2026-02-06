@@ -184,7 +184,7 @@ def _get_dominant_distraction_type(stats: Optional[Dict[str, Any]] = None) -> st
     """
     Determine which distraction type was most dominant by percentage.
     
-    Analyzes session statistics to find whether phone/gadget usage, being away
+    Analyses session statistics to find whether phone/gadget usage, being away
     from desk, or screen distractions (wrong apps/websites) was the primary
     distraction during the session.
     
@@ -675,11 +675,11 @@ def _create_focus_card(
     
     Groups all focus visualization elements into a visually cohesive container
     with rounded corners, background, and border styling. The statement is
-    customized based on the dominant distraction type from session stats.
+    customised based on the dominant distraction type from session stats.
     
     Args:
         focus_pct: Focus percentage (0-100)
-        stats: Optional statistics dictionary for customizing the statement
+        stats: Optional statistics dictionary for customising the statement
         
     Returns:
         RoundedBoxFlowable containing all focus elements in a styled card
@@ -699,8 +699,8 @@ def _create_focus_card(
     card = RoundedBoxFlowable(
         content=content,
         width=6.5 * inch,
-        bg_color='#F4F8FB',      # Light blue-gray background
-        border_color='#A8C0D4',  # More visible border (darker blue-gray)
+        bg_color='#F4F8FB',      # Light blue-grey background
+        border_color='#A8C0D4',  # More visible border (darker blue-grey)
         border_width=3,          # Noticeable border thickness
         corner_radius=15,
         padding=25,              # Increased padding for larger card
@@ -969,7 +969,7 @@ def generate_report(
     story.append(stats_table)
     
     # Add focus visualization card (gauge, legend, statement in a rounded container)
-    # Pass stats to customize the statement based on dominant distraction type
+    # Pass stats to customise the statement based on dominant distraction type
     story.append(Spacer(1, 0.4 * inch))
     focus_card = _create_focus_card(focus_pct, stats)
     
@@ -1041,7 +1041,7 @@ def generate_report(
             for i, event in enumerate(non_zero_events, 1):
                 event_type = event.get('type', '')
                 if event_type == 'present':
-                    # Focused row: normal font, green text for activity column
+                    # Focussed row: normal font, green text for activity column
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#1B7A3D')))
                 elif event_type in ['away', 'gadget_suspected']:
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#C62828')))

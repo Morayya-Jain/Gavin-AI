@@ -518,7 +518,7 @@ class PaymentScreen:
         # Force geometry update
         self.root.update_idletasks()
         
-        # Enable fixed sizing for responsive behavior
+        # Enable fixed sizing for responsive behaviour
         self.card_bg.pack_propagate(False)
         
         # Calculate and apply initial size based on current window

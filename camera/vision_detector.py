@@ -165,7 +165,7 @@ RULES:
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
-        Analyze frame using OpenAI Vision API.
+        Analyse frame using OpenAI Vision API.
         
         Args:
             frame: BGR image from camera
@@ -233,7 +233,7 @@ RULES:
                 )
             
             # Call OpenAI Vision API with retry for transient errors
-            # Matches Gemini detector behavior for consistency
+            # Matches Gemini detector behaviour for consistency
             # Includes socket errors for network issues (DNS, connection failures)
             response = retry_with_backoff(
                 make_api_call,

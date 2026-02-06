@@ -32,7 +32,7 @@ python3 main.py
 
 1. A modern desktop window opens
 2. Click **"Start Session"** to begin tracking
-3. Watch the status indicator show Focused/Away/On another gadget
+3. Watch the status indicator show Focussed/Away/On another gadget
 4. Click **"Stop Session"** when you're done
 5. Click **"Generate Report"** to get your PDF!
 
@@ -55,7 +55,7 @@ Run with `python3 main.py --cli` for terminal-based tracking:
 │         Focus Tracker              │
 │          [1h 45m left]             │
 │                                    │
-│  ● Focused                         │
+│  ● Focussed                        │
 │                                    │
 │        01:23:45                    │
 │      Session Duration              │
@@ -108,11 +108,11 @@ Report saved: ~/Downloads/BrainDock Monday 2.30 PM.pdf
 Your PDF report includes:
 
 - Total session duration  
-- Focused time percentage  
+- Focussed time percentage  
 - Away time tracking  
 - Gadget usage detection  
 - Timeline of your session  
 - AI-generated insights  
-- Personalized improvement suggestions  
+- Personalised improvement suggestions  
 
-Stay focused!
+Stay focussed!

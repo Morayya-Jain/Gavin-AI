@@ -163,5 +163,5 @@ Website: https://thebraindock.com
 
 
 ===============================================
-         Enjoy focused studying!
+         Enjoy focussed studying!
 ===============================================

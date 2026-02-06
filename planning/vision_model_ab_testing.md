@@ -390,7 +390,7 @@ Potential Savings:     ~$6/month (60%)
 | **1. Setup** | Create test images, manifest | 1-2 hours |
 | **2. Implement** | Create Gemini detector | 1-2 hours |
 | **3. Test** | Run A/B comparison | 30 min |
-| **4. Analyze** | Review results, decide | 30 min |
+| **4. Analyse** | Review results, decide | 30 min |
 | **5. Migrate** | Switch if approved | 1 hour |
 
 **Total estimated effort: 4-6 hours**

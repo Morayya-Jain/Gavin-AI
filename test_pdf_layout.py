@@ -41,7 +41,7 @@ def main():
     events = [
         {
             'type': 'present',
-            'type_label': 'Focused',
+            'type_label': 'Focussed',
             'start': '10:00:00 AM',
             'end': '10:05:30 AM',
             'duration_seconds': 330  # 5m 30s
@@ -55,7 +55,7 @@ def main():
         },
         {
             'type': 'present',
-            'type_label': 'Focused',
+            'type_label': 'Focussed',
             'start': '10:08:15 AM',
             'end': '10:15:00 AM',
             'duration_seconds': 405  # 6m 45s
@@ -69,7 +69,7 @@ def main():
         },
         {
             'type': 'present',
-            'type_label': 'Focused',
+            'type_label': 'Focussed',
             'start': '10:17:30 AM',
             'end': '10:25:00 AM',
             'duration_seconds': 450  # 7m 30s
@@ -90,7 +90,7 @@ def main():
         },
         {
             'type': 'present',
-            'type_label': 'Focused',
+            'type_label': 'Focussed',
             'start': '10:33:00 AM',
             'end': '10:40:00 AM',
             'duration_seconds': 420  # 7m
@@ -104,7 +104,7 @@ def main():
         },
         {
             'type': 'present',
-            'type_label': 'Focused',
+            'type_label': 'Focussed',
             'start': '10:42:30 AM',
             'end': '10:50:00 AM',
             'duration_seconds': 450  # 7m 30s

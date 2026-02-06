@@ -253,9 +253,9 @@ SCREEN_CHECK_INTERVAL = 3  # Seconds between screen checks (cheaper than camera)
 SCREEN_SETTINGS_FILE = USER_DATA_DIR / "blocklist.json"  # Blocklist persistence (user data)
 SCREEN_AI_FALLBACK_ENABLED = False  # Enable AI Vision fallback (costs ~$0.001-0.002 per check)
 
-# Unfocused alert settings
-# Alert plays at each of these thresholds (in seconds) when user is unfocused
-# After all alerts play, no more until user refocuses
+# Unfocussed alert settings
+# Alert plays at each of these thresholds (in seconds) when user is unfocussed
+# After all alerts play, no more until user refocusses
 UNFOCUSED_ALERT_TIMES = [20, 60, 120]  # Escalating alerts: 20s, 1min, 2min
 
 # Supportive, non-condemning messages for each alert level

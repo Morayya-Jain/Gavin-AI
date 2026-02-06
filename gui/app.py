@@ -513,25 +513,25 @@ THEMES = {
         "status_gadget_bg": "#FEE2E2",  # Light red background
         "status_screen": "#8B5CF6",     # Purple for screen distraction
         "status_screen_bg": "#EDE9FE",  # Light purple background
-        "status_idle": "#8E8E93",       # Gray for idle
-        "status_paused": "#8E8E93",     # Muted gray for paused
+        "status_idle": "#8E8E93",       # Grey for idle
+        "status_paused": "#8E8E93",     # Muted grey for paused
         "button_start": "#1C1C1E",      # Black start button
         "button_start_hover": "#2C3E50", # Dark Grey on hover
         "button_stop": "#EF4444",       # Red stop button
         "button_stop_hover": "#DC2626", # Darker red on hover
-        "button_pause": "#8E8E93",      # Gray pause button
-        "button_pause_hover": "#6B7280", # Darker gray on hover
+        "button_pause": "#8E8E93",      # Grey pause button
+        "button_pause_hover": "#6B7280", # Darker grey on hover
         "button_resume": "#2C3E50",     # Dark Blue resume button
         "button_resume_hover": "#3B82F6", # Blue on hover
-        "button_settings": "#8E8E93",   # Gray for settings
-        "button_settings_hover": "#6B7280", # Darker gray on hover
+        "button_settings": "#8E8E93",   # Grey for settings
+        "button_settings_hover": "#6B7280", # Darker grey on hover
         "time_badge": "#8B5CF6",        # Purple for time remaining
         "time_badge_low": "#F59E0B",    # Orange when time is low
         "time_badge_expired": "#EF4444", # Red when time expired
         "toggle_on": "#2C3E50",         # Dark Blue for enabled toggles
-        "toggle_off": "#E5E5EA",        # Light gray for disabled toggles
+        "toggle_off": "#E5E5EA",        # Light grey for disabled toggles
         "toggle_text_on": "#FFFFFF",    # White text when toggle on
-        "toggle_text_off": "#8E8E93",   # Gray text when toggle off
+        "toggle_text_off": "#8E8E93",   # Grey text when toggle off
         
         # New Seraphic Colors
         "shadow_light": "#E5E5EA", 
@@ -1383,7 +1383,7 @@ class NotificationPopup:
     """
     A floating notification popup that appears on top of all windows.
     
-    Shows supportive messages when the user is unfocused, with auto-dismiss
+    Shows supportive messages when the user is unfocussed, with auto-dismiss
     after a configurable duration and a manual close button.
     """
     
@@ -1498,14 +1498,14 @@ class NotificationPopup:
         """Build the popup UI matching the reference design."""
         # Colors matching the design exactly
         bg_color = "#FFFFFF"           # White background
-        border_color = "#D1D5DB"       # Light gray border for visibility
+        border_color = "#D1D5DB"       # Light grey border for visibility
         text_dark = "#1F2937"          # Dark text for message
-        text_muted = "#B0B8C1"         # Light gray for close button
+        text_muted = "#B0B8C1"         # Light grey for close button
         accent_blue = "#3B82F6"        # Blue color for BrainDock title
-        badge_bg = "#F3F4F6"           # Light gray badge background
+        badge_bg = "#F3F4F6"           # Light grey badge background
         badge_border = "#E5E7EB"       # Badge border
-        badge_text_color = "#4B5563"   # Dark gray badge text
-        dot_color = "#D1D5DB"          # Very light gray dot (subtle)
+        badge_text_color = "#4B5563"   # Dark grey badge text
+        dot_color = "#D1D5DB"          # Very light grey dot (subtle)
         corner_radius = 24             # Rounded corners
         border_width = 2               # Border thickness
         
@@ -1613,7 +1613,7 @@ class NotificationPopup:
         # Close button with hover background
         close_x = self.popup_width - 32
         close_y = title_y
-        close_bg_color = "#F0F4F5"  # Light gray background on hover (RGB 240, 244, 245)
+        close_bg_color = "#F0F4F5"  # Light grey background on hover (RGB 240, 244, 245)
         
         # Background circle for close button (starts as white/invisible, needs fill for events)
         self.close_bg_id = self.canvas.create_oval(
@@ -1685,12 +1685,12 @@ class NotificationPopup:
         )
     
     def _on_close_hover_enter(self, event):
-        """Show gray background on close button hover."""
+        """Show grey background on close button hover."""
         self.canvas.itemconfig(self.close_bg_id, fill=self._close_bg_color)
         self.canvas.itemconfig(self.close_text_id, fill=self._text_dark)
     
     def _on_close_hover_leave(self, event):
-        """Hide gray background when leaving close button."""
+        """Hide grey background when leaving close button."""
         self.canvas.itemconfig(self.close_bg_id, fill=self._close_bg_normal)
         self.canvas.itemconfig(self.close_text_id, fill=self._text_muted)
     
@@ -1789,7 +1789,7 @@ class BrainDockGUI:
     
     Provides a clean, scalable interface with:
     - Start/Stop session button
-    - Status indicator (Focused / Away / On another gadget)
+    - Status indicator (Focussed / Away / On another gadget)
     - Session timer
     - Auto-generates PDF report on session stop
     
@@ -1886,7 +1886,7 @@ class BrainDockGUI:
         self.gadget_detection_count = 0
         self.screen_distraction_count = 0
         
-        # Unfocused alert tracking
+        # Unfocussed alert tracking
         self.unfocused_start_time: Optional[float] = None
         self.alerts_played: int = 0  # Tracks how many alerts have been played (max 3)
         
@@ -2566,7 +2566,7 @@ class BrainDockGUI:
         if card_type == "focus":
             title = "Daily Focus"
             main_val = format_stat_time(0)
-            sub_label = "Focused"
+            sub_label = "Focussed"
             sub_val = format_stat_time(0)
         elif card_type == "distractions":
             title = "Daily Distractions"
@@ -2670,7 +2670,7 @@ class BrainDockGUI:
         else:
             today_focus_rate = 0.0
         
-        # --- Update Focus Card (TODAY's total focused time) ---
+        # --- Update Focus Card (TODAY's total focussed time) ---
         if "focus" in self.stat_cards:
             card_data = self.stat_cards["focus"]
             card = card_data["card"]
@@ -4034,8 +4034,8 @@ class BrainDockGUI:
                 return True, "", False
             
             # Unknown app - warn but allow
-            # No partial matching - must be exact match to be recognized
-            return True, f"'{app_name}' is not a recognized app - please verify the name", True
+            # No partial matching - must be exact match to be recognised
+            return True, f"'{app_name}' is not a recognised app - please verify the name", True
             
         except Exception as e:
             logger.error(f"App validation error for '{app_name}': {e}")
@@ -4416,9 +4416,9 @@ class BrainDockGUI:
             (
                 "\u25CF",  # Filled circle (status dot)
                 COLORS["status_focused"],
-                "Stay Focused",
+                "Stay Focussed",
                 "The status indicator shows your current state:\n"
-                "\u2022 Green = Focused and on task\n"
+                "\u2022 Green = Focussed and on task\n"
                 "\u2022 Orange = Away from desk\n"
                 "\u2022 Red = Gadget distraction\n"
                 "\u2022 Purple = Screen distraction"
@@ -4444,7 +4444,7 @@ class BrainDockGUI:
                 COLORS["accent_primary"],
                 "See Your Time",
                 "The timer displays your session duration. See how long you have been "
-                "focused and aim to improve your quality focus time each session."
+                "focussed and aim to improve your quality focus time each session."
             ),
             (
                 "\u23F8",  # Pause symbol
@@ -5049,7 +5049,7 @@ class BrainDockGUI:
         if self.session and self.session_started:
             self.session.log_event(config.EVENT_PAUSED)
         
-        # Reset unfocused alert tracking (shouldn't alert while paused)
+        # Reset unfocussed alert tracking (shouldn't alert while paused)
         self.unfocused_start_time = None
         self.alerts_played = 0
         
@@ -5101,7 +5101,7 @@ class BrainDockGUI:
             self.session.log_event(config.EVENT_PRESENT)
         
         # Update UI
-        self._update_status("focused", "Focused")
+        self._update_status("focused", "Focussed")
         self.pause_btn.configure(
             text="Pause Session",
             bg_color=COLORS["button_pause"],
@@ -5236,7 +5236,7 @@ class BrainDockGUI:
         self.total_paused_seconds = 0.0
         self.frozen_active_seconds = 0
         
-        # Reset unfocused alert tracking for new session
+        # Reset unfocussed alert tracking for new session
         self.unfocused_start_time = None
         self.alerts_played = 0
         
@@ -5298,7 +5298,7 @@ class BrainDockGUI:
         
         # Start appropriate detection thread(s) based on monitoring mode
         if self.monitoring_mode == config.MODE_CAMERA_ONLY:
-            # Camera only mode (existing behavior)
+            # Camera only mode (existing behaviour)
             self.detection_thread = threading.Thread(
                 target=self._detection_loop,
                 daemon=True
@@ -5413,8 +5413,8 @@ class BrainDockGUI:
         """
         Main detection loop running in a separate thread.
         
-        Captures frames from camera and analyzes them using Vision API.
-        Also handles unfocused alerts at configured thresholds and usage tracking.
+        Captures frames from camera and analyses them using Vision API.
+        Also handles unfocussed alerts at configured thresholds and usage tracking.
         """
         try:
             detector = create_vision_detector()
@@ -5520,7 +5520,7 @@ class BrainDockGUI:
                             if self.session.current_state != config.EVENT_GADGET_SUSPECTED:
                                 self.gadget_detection_count += 1
                         
-                        # Check if user is unfocused (based on priority-resolved event)
+                        # Check if user is unfocussed (based on priority-resolved event)
                         is_unfocused = event_type in (
                             config.EVENT_AWAY, 
                             config.EVENT_GADGET_SUSPECTED,
@@ -5532,7 +5532,7 @@ class BrainDockGUI:
                             if self.unfocused_start_time is None:
                                 self.unfocused_start_time = current_time
                                 self.alerts_played = 0
-                                logger.debug("Started tracking unfocused time")
+                                logger.debug("Started tracking unfocussed time")
                             
                             # Check if we should play an alert
                             unfocused_duration = current_time - self.unfocused_start_time
@@ -5544,9 +5544,9 @@ class BrainDockGUI:
                                 self._play_unfocused_alert()
                                 self.alerts_played += 1
                         else:
-                            # User is focused - reset tracking
+                            # User is focussed - reset tracking
                             if self.unfocused_start_time is not None:
-                                logger.debug("User refocused - resetting alert tracking")
+                                logger.debug("User refocussed - resetting alert tracking")
                             self.unfocused_start_time = None
                             self.alerts_played = 0
                         
@@ -5602,8 +5602,8 @@ class BrainDockGUI:
                     self.session_start_time = self.session.start_time
                     self.session_started = True
                     logger.info("Screen-only mode - session timer started")
-                    # Update UI to show focused status
-                    self.root.after(0, lambda: self._update_status("focused", "Focused"))
+                    # Update UI to show focussed status
+                    self.root.after(0, lambda: self._update_status("focused", "Focussed"))
             
             while not self.should_stop.is_set():
                 # Skip when paused
@@ -5692,11 +5692,11 @@ class BrainDockGUI:
                             # Not distracted in screen-only mode
                             if self.session and self.session_started:
                                 self.session.log_event(config.EVENT_PRESENT)
-                            self.root.after(0, lambda: self._update_status("focused", "Focused"))
+                            self.root.after(0, lambda: self._update_status("focused", "Focussed"))
                             
                             # Reset alert tracking
                             if self.unfocused_start_time is not None:
-                                logger.debug("Screen refocused - resetting alert tracking")
+                                logger.debug("Screen refocussed - resetting alert tracking")
                             self.unfocused_start_time = None
                             self.alerts_played = 0
                     
@@ -5870,7 +5870,7 @@ class BrainDockGUI:
         2. Away - Person not present or not at working distance
         3. Screen distraction - On a distracting app/website
         4. Gadget - Actively using phone/tablet/controller
-        5. Focused - Present at desk, no distractions (default)
+        5. Focussed - Present at desk, no distractions (default)
         
         Returns:
             Event type constant representing the prioritized status
@@ -5896,7 +5896,7 @@ class BrainDockGUI:
                 if camera_event == config.EVENT_GADGET_SUSPECTED:
                     return config.EVENT_GADGET_SUSPECTED
             
-            # Priority 5: Focused (default - person present, no distractions)
+            # Priority 5: Focussed (default - person present, no distractions)
             return config.EVENT_PRESENT
     
     def _update_detection_status(self, event_type: str):
@@ -5907,7 +5907,7 @@ class BrainDockGUI:
             event_type: Type of event detected
         """
         status_map = {
-            config.EVENT_PRESENT: ("focused", "Focused"),
+            config.EVENT_PRESENT: ("focused", "Focussed"),
             config.EVENT_AWAY: ("away", "Away from Desk"),
             config.EVENT_GADGET_SUSPECTED: ("gadget", "On another gadget"),
             config.EVENT_SCREEN_DISTRACTION: ("screen", "Screen distraction"),
@@ -6121,7 +6121,7 @@ class BrainDockGUI:
         # Show notification popup immediately after sound starts (capture values)
         self.root.after(100, lambda b=badge_text, m=message: self._show_alert_popup(b, m))
         
-        logger.info(f"Unfocused alert #{self.alerts_played + 1} played")
+        logger.info(f"Unfocussed alert #{self.alerts_played + 1} played")
     
     def _show_alert_popup(self, badge_text: str, message: str):
         """
@@ -6142,10 +6142,10 @@ class BrainDockGUI:
             logger.error(f"Failed to show notification popup: {e}")
     
     def _dismiss_alert_popup(self):
-        """Dismiss any active notification popup when user refocuses."""
+        """Dismiss any active notification popup when user refocusses."""
         if NotificationPopup._active_popup is not None:
             NotificationPopup._active_popup.dismiss()
-            logger.debug("Dismissed alert popup - user refocused")
+            logger.debug("Dismissed alert popup - user refocussed")
     
     def _generate_report(self):
         """Generate PDF report for the completed session."""

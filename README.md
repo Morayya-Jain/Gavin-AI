@@ -11,7 +11,7 @@ A local AI-powered focus tracker that monitors presence and **gadget distraction
   - Detects: Person actively using any gadget (looking at it + device active)
   - Ignores: Gadget on desk but person looking elsewhere, or device inactive
   - Ignores: Smartwatches/Apple Watch (used for time/notifications, not distractions)
-- **Session Analytics**: Computes focused time, away time, and gadget usage statistics
+- **Session Analytics**: Computes focussed time, away time, and gadget usage statistics
 - **PDF Reports**: Professional combined PDF with summary statistics and full session logs
 - **Privacy-Conscious**: We capture frames for analysis; we don't store them locally. See [OpenAI's retention policy](https://openai.com/policies/api-data-usage-policies)
 
@@ -51,7 +51,7 @@ python main.py
 
 The GUI provides:
 - **Start/Stop Button** - Control your session
-- **Status Indicator** - Real-time display of Focused/Away/On another gadget
+- **Status Indicator** - Real-time display of Focussed/Away/On another gadget
 - **Timer** - Track session duration
 - **Generate Report** - Create PDF report after session ends
 
@@ -80,7 +80,7 @@ python main.py --cli
 
 **Reports include:**
 - Page 1: Session statistics (duration, focus rate, time breakdown)
-- Page 2+: Complete timeline of all events (showing when you were focused/away/distracted)
+- Page 2+: Complete timeline of all events (showing when you were focussed/away/distracted)
 
 ### Reports
 
@@ -113,7 +113,7 @@ braindock/
 ├── tracking/
 │   ├── __init__.py
 │   ├── session.py            # Session management & event logging
-│   ├── analytics.py          # Event summarization & statistics
+│   ├── analytics.py          # Event summarisation & statistics
 │   └── usage_limiter.py      # MVP usage time tracking & limits
 ├── reporting/
 │   ├── __init__.py
@@ -150,7 +150,7 @@ Share this password with authorized users when they need more time.
 
 ## Configuration
 
-Edit `config.py` to customize:
+Edit `config.py` to customise:
 - Detection thresholds (face confidence, phone detection angle)
 - Camera settings (resolution, FPS)
 - OpenAI model selection

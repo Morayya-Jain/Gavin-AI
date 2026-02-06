@@ -24,9 +24,9 @@ BrainDock uses **OpenAI for EVERYTHING**:
 │  At Session End:                                    │
 │      ↓                                              │
 │  OpenAI GPT API (gpt-4o-mini)                      │
-│      ├→ Analyzes: Session statistics               │
+│      ├→ Analyses: Session statistics               │
 │      ├→ Generates: Friendly summary                │
-│      └→ Provides: Personalized suggestions         │
+│      └→ Provides: Personalised suggestions         │
 │      ↓                                              │
 │  PDF Report Generated and Downloaded                 │
 │                                                      │
@@ -39,7 +39,7 @@ BrainDock uses **OpenAI for EVERYTHING**:
 
 **File:** `camera/vision_detector.py`  
 **When:** Every second (configurable via `DETECTION_FPS`)  
-**What:** Analyzes camera frame
+**What:** Analyses camera frame
 
 ```python
 # Every 1 second:
@@ -58,7 +58,7 @@ Returns:
 ```
 
 **Distance-Aware Detection:**
-- `person_present=true` + `at_desk=true` → Focused (at desk)
+- `person_present=true` + `at_desk=true` → Focussed (at desk)
 - `person_present=true` + `at_desk=false` → Away (roaming around room)
 - `person_present=false` → Away (not visible)
 
@@ -78,13 +78,13 @@ OpenAI GPT API Call (gpt-4o-mini)
     ↓
 Returns:
 {
-  "summary": "Detailed 4-5 sentence analysis with behavior patterns...",
+  "summary": "Detailed 4-5 sentence analysis with behaviour patterns...",
   "suggestions": ["specific takeaway 1", "specific takeaway 2", ...]
 }
 ```
 
 **Features:**
-- **Detailed Summary (4-5 sentences):** Overall session quality, behavior patterns, timing/context of distractions, what worked vs what didn't
+- **Detailed Summary (4-5 sentences):** Overall session quality, behaviour patterns, timing/context of distractions, what worked vs what didn't
 - **5 Specific Takeaways:** Data-driven recommendations based on actual session patterns, references specific times/events, concrete actionable strategies
 - **Pattern Recognition:** Identifies trends like "strong initial focus followed by gadget distraction" or "frequent short breaks vs few long breaks"
 - **Honest Assessment:** Direct analysis without generic encouragement
@@ -130,18 +130,18 @@ OPENAI_MODEL = "gpt-4o-mini"
 # Line 16: Model for vision detection
 OPENAI_VISION_MODEL = "gpt-4o-mini"
 
-# Line 21: How often to analyze frames
+# Line 21: How often to analyse frames
 VISION_DETECTION_INTERVAL = 1.0  # Every 1 second
 
 # Line 22: Gadget confidence threshold
 PHONE_CONFIDENCE_THRESHOLD = 0.5  # 50% confidence
 ```
 
-### Cost Optimization Options:
+### Cost Optimisation Options:
 
 **Option 1: Reduce Detection Frequency**
 ```python
-DETECTION_FPS = 0.5  # Analyze every 2 seconds instead of 1
+DETECTION_FPS = 0.5  # Analyse every 2 seconds instead of 1
 # Cuts cost in half!
 ```
 
@@ -173,7 +173,7 @@ self.detection_cache_duration = 2.0  # Cache for 2 seconds instead of 1
    • Miss: Dark screens
    • False positive: Books, papers
 
-❌ Behavioral heuristics
+❌ Behavioural heuristics
    • False positive: Looking at notes
    • False positive: Thinking
    • Miss: Gadget on desk
@@ -183,7 +183,7 @@ self.detection_cache_duration = 2.0  # Cache for 2 seconds instead of 1
 ```
 ✅ OpenAI Vision (GPT-4o-mini with vision)
    • Understands context
-   • Recognizes all gadget types at any angle
+   • Recognises all gadget types at any angle
    • Handles poor lighting
    • Distinguishes gadgets from other objects
    • Detects phones, tablets, controllers, TV, etc.
@@ -240,7 +240,7 @@ This dramatically reduces false positives and accurately tracks real gadget dist
 
 ## 📊 What Gets Detected Now
 
-The Vision API analyzes each frame for:
+The Vision API analyses each frame for:
 
 1. **Person Presence**
    - Is someone sitting at the desk?
@@ -515,7 +515,7 @@ INFO: ✓ Gadget no longer in use
 
 📊 Session Summary
 ⏱️  Total Duration: 5m 30s
-🎯 Focused Time: 4m 15s (77.3%)
+🎯 Focussed Time: 4m 15s (77.3%)
 📺 Gadget Usage: 45s
 ```
 

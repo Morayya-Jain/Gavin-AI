@@ -21,7 +21,7 @@
 
 ## Event Types
 
-- `present`: At desk, focused
+- `present`: At desk, focussed
 - `away`: Not visible or far from desk
 - `gadget_suspected`: Actively using phone/tablet/controller/TV
 - `screen_distraction`: Distracting website/app detected (YouTube, Netflix, etc.)
@@ -36,7 +36,7 @@
 ## Pause & Alerts
 
 - Pause: Timer freezes, no API calls. Focus rate = present/(total-paused)
-- Unfocused alerts: 20s → 60s → 120s, then stops until refocus
+- Unfocussed alerts: 20s → 60s → 120s, then stops until refocus
 
 ## Key Constants (config.py)
 
@@ -89,7 +89,7 @@ python3 main.py     # GUI launches, check ~/Downloads/ for PDF
 - **Separate fields**: URLs (`custom_urls`) and Apps (`custom_apps`) in `screen/blocklist.py`
 - **URL validation**: TLD check + DNS lookup (with network fallback) in `gui/app.py`
 - **App validation**: `KNOWN_APPS` whitelist (1500+ apps) in `gui/app.py` - DO NOT read entire list into context
-  - Known apps → accepted silently | Unknown apps → warning "not recognized"
+  - Known apps → accepted silently | Unknown apps → warning "not recognised"
 - **Self-cleaning**: Invalid patterns auto-removed at runtime in `check_distraction()`
 - Chrome URL detection: macOS (AppleScript), Windows (pywin32)
 

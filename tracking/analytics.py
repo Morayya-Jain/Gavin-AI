@@ -219,7 +219,7 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
     
     # Create readable event type labels
     type_labels = {
-        config.EVENT_PRESENT: "Focused",
+        config.EVENT_PRESENT: "Focussed",
         config.EVENT_AWAY: "Away",
         config.EVENT_GADGET_SUSPECTED: "Gadget Usage",
         config.EVENT_SCREEN_DISTRACTION: "Screen Distraction",
@@ -336,7 +336,7 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
     
     summary = f"""Session Summary:
 Total Duration: {duration_str}
-Focused Time: {fmt_mins(present_secs)} minutes ({focus_pct:.1f}%)
+Focussed Time: {fmt_mins(present_secs)} minutes ({focus_pct:.1f}%)
 Away Time: {fmt_mins(away_secs)} minutes
 Gadget Usage: {fmt_mins(gadget_secs)} minutes
 """
@@ -357,7 +357,7 @@ Gadget Usage: {fmt_mins(gadget_secs)} minutes
     elif focus_pct >= 60:
         summary += "Good session! You maintained decent focus with some breaks."
     elif focus_pct >= 40:
-        summary += "Fair session. Consider minimizing distractions for better focus."
+        summary += "Fair session. Consider minimising distractions for better focus."
     else:
         summary += "This session had many interruptions. Try to find a quieter space."
     

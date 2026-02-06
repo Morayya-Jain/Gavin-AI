@@ -51,7 +51,7 @@ def get_event_type(detection_state: dict) -> str:
     Determine event type from detection state.
     
     A person must be both present AND at desk (close to camera) to be
-    considered focused. If they're visible but far away (roaming around
+    considered focussed. If they're visible but far away (roaming around
     the room), they're treated as away.
     
     Args:

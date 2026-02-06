@@ -79,7 +79,7 @@ class WindowDetector:
     """
     Cross-platform detector for active window information.
     
-    Detects the currently focused application, window title,
+    Detects the currently focussed application, window title,
     and browser URL (Chrome only in Phase 1).
     """
     
@@ -773,9 +773,9 @@ def get_screen_state_with_ai_fallback(
     """
     Get screen state with optional AI Vision fallback.
     
-    This is an enhanced version that can use AI to analyze screenshots
+    This is an enhanced version that can use AI to analyse screenshots
     when local blocklist matching is inconclusive. AI is only called
-    as a last resort to minimize API costs.
+    as a last resort to minimise API costs.
     
     Args:
         blocklist: Blocklist instance to check against
@@ -795,7 +795,7 @@ def get_screen_state_with_ai_fallback(
     if not use_ai_fallback:
         return result
     
-    # AI fallback: Take screenshot and analyze
+    # AI fallback: Take screenshot and analyse
     # Only do this for truly ambiguous cases where we have a browser open
     # but couldn't determine if it's distracting
     window_info = result.get("app_name", "")
@@ -823,7 +823,7 @@ def get_screen_state_with_ai_fallback(
 
 def _analyze_screen_with_ai() -> Optional[Dict[str, Any]]:
     """
-    Analyze the current screen using OpenAI Vision API.
+    Analyse the current screen using OpenAI Vision API.
     
     Takes a screenshot and sends it to the AI to determine if the
     user is on a distracting site/app. Only returns category, no

@@ -441,7 +441,7 @@ class TestInstanceLockFailClosed(unittest.TestCase):
         # Should return False (fail-closed), not True
         result = lock.acquire()
         
-        # Note: behavior depends on whether directory creation fails
+        # Note: behaviour depends on whether directory creation fails
         # The key is that it doesn't crash
 
 

@@ -643,7 +643,7 @@ class StripeIntegration:
                 errors.append(f"/usr/bin/open error: {e}")
                 logger.warning(f"/usr/bin/open error: {e}")
         
-        # Method 3: Windows - Multiple fallback approaches (order optimized for reliability)
+        # Method 3: Windows - Multiple fallback approaches (order optimised for reliability)
         if sys.platform.startswith("win"):
             # Method 3a: Use rundll32 with url.dll (most reliable for URLs on Windows)
             try:

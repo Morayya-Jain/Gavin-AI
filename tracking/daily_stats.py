@@ -138,7 +138,7 @@ class DailyStatsTracker:
         Uses floats for full precision. Truncation to int happens only at display time.
         
         Args:
-            focus_seconds: Time spent focused (present) in seconds (float for precision)
+            focus_seconds: Time spent focussed (present) in seconds (float for precision)
             away_seconds: Time spent away from desk in seconds (float for precision)
             gadget_seconds: Time spent on gadgets (phone, etc.) in seconds (float for precision)
             screen_distraction_seconds: Time spent on distracting websites/apps in seconds (float for precision)
@@ -186,7 +186,7 @@ class DailyStatsTracker:
             return self.data.copy()
     
     def get_focus_seconds(self) -> float:
-        """Get total focused time today in seconds (float for precision)."""
+        """Get total focussed time today in seconds (float for precision)."""
         self._check_and_reset_if_new_day()
         return float(self.data["focus_seconds"])
     

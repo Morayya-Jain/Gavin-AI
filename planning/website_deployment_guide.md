@@ -18,7 +18,7 @@ A summary of the approach to create and deploy a landing page for BrainDock.
 **Separate repository** for the website (not in the main `braindock` repo):
 - Clean separation between product code and marketing site
 - Different deployment cycles
-- Keeps main repo focused on application code
+- Keeps main repo focussed on application code
 
 ---
 

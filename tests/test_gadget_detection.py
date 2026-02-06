@@ -95,7 +95,7 @@ try:
             print(f"\n⏱️  Testing at {time.strftime('%H:%M:%S')}...")
             
             try:
-                # Analyze frame
+                # Analyse frame
                 result = detector.analyze_frame(frame, use_cache=False)
                 
                 # Print results

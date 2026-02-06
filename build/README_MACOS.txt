@@ -62,5 +62,5 @@ If you have any issues, please contact:
 
 
 ===============================================
-         Enjoy focused studying!
+         Enjoy focussed studying!
 ===============================================

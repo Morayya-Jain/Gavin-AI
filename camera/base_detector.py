@@ -26,7 +26,7 @@ def get_safe_default_result() -> Dict[str, Any]:
     
     Returns:
         Dictionary with fail-safe detection values (assumes user is present
-        and focused to avoid false distraction alerts on API errors).
+        and focussed to avoid false distraction alerts on API errors).
     """
     return DEFAULT_SAFE_RESULT.copy()
 
@@ -243,12 +243,12 @@ class VisionDetectorProtocol(Protocol):
     Protocol defining the interface for vision detectors.
     
     Both OpenAI and Gemini detectors must implement these methods
-    to ensure consistent behavior across providers.
+    to ensure consistent behaviour across providers.
     """
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
-        Analyze a camera frame for presence and gadget detection.
+        Analyse a camera frame for presence and gadget detection.
         
         Args:
             frame: BGR image from camera (numpy array)

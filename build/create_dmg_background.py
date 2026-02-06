@@ -38,7 +38,7 @@ RIGHT_ICON_X = 480  # Applications folder position
 ARROW_CENTER_X = (LEFT_ICON_X + RIGHT_ICON_X) // 2  # Arrow centered between icons
 
 # Colors
-BACKGROUND_COLOR = (30, 30, 35)  # Dark gray, matches app theme
+BACKGROUND_COLOR = (30, 30, 35)  # Dark grey, matches app theme
 ARROW_COLOR = (255, 255, 255)  # White arrow
 ICON_BG_COLOR = (45, 45, 50)  # Slightly lighter for icon background
 

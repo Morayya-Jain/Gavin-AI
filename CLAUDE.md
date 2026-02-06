@@ -29,7 +29,7 @@ Dev mode: `SKIP_LICENSE_CHECK=true` | Vision: `VISION_PROVIDER=gemini` (default)
 
 **Detection Flow:** Camera Frame → Vision API → Detection State → Session Logger → PDF Report
 
-**Event Types:** `present` (focused), `away` (not at desk), `gadget_suspected` (phone/tablet), `screen_distraction`, `paused`
+**Event Types:** `present` (focussed), `away` (not at desk), `gadget_suspected` (phone/tablet), `screen_distraction`, `paused`
 
 **Monitoring Modes:** `camera_only` (default), `screen_only`, `both`
 

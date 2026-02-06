@@ -730,7 +730,7 @@ class NaturalScroller:
     """
     Cross-platform natural scrolling with physics-based momentum.
     
-    Provides smooth, finger-following scroll behavior that works consistently
+    Provides smooth, finger-following scroll behaviour that works consistently
     across macOS and Windows, with trackpad, mouse wheel, and scrollbar.
     
     Uses weak references to prevent memory leaks and automatically cleans up
@@ -860,7 +860,7 @@ class NaturalScroller:
         Normalize scroll delta across platforms and devices.
         
         Uses consistent normalization for both Windows and macOS to ensure
-        identical scroll behavior across platforms.
+        identical scroll behaviour across platforms.
         
         Args:
             event: The scroll event.

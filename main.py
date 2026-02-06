@@ -302,7 +302,7 @@ class BrainDock:
         focus_pct = (focused_min / total_min * 100) if total_min > 0 else 0
         
         print(f"\n⏱️  Total Duration: {total_min:.1f} minutes")
-        print(f"🎯 Focused Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)")
+        print(f"🎯 Focussed Time: {focused_min:.1f} minutes ({focus_pct:.1f}%)")
         print(f"🚶 Away Time: {away_min:.1f} minutes")
         print(f"📱 Gadget Usage: {gadget_min:.1f} minutes")
 

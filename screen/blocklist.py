@@ -299,7 +299,7 @@ class Blocklist:
         Check if the current screen content matches any blocklist pattern.
         
         This method is safe and never crashes - invalid patterns are automatically
-        removed from the blocklist (self-cleaning behavior).
+        removed from the blocklist (self-cleaning behaviour).
         
         Domain Matching Rules:
         - Patterns like "x.com" are matched as domain boundaries (not substring)
@@ -506,7 +506,7 @@ class Blocklist:
         Remove invalid patterns from both custom_urls and custom_apps.
         
         This is called automatically when a pattern causes errors during
-        check_distraction() - self-cleaning behavior.
+        check_distraction() - self-cleaning behaviour.
         
         Args:
             patterns: List of patterns to remove

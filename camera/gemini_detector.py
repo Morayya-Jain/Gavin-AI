@@ -174,7 +174,7 @@ RULES:
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, Any]:
         """
-        Analyze frame using Gemini Vision API.
+        Analyse frame using Gemini Vision API.
         
         Args:
             frame: BGR image from camera

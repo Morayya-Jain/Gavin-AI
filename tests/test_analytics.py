@@ -62,7 +62,7 @@ class TestAnalytics(unittest.TestCase):
         # Present: 30 + 15 + 5 = 50 minutes
         # Away: 5 minutes
         # Gadget: 5 minutes
-        # Focused: 50 minutes (gadget tracked separately)
+        # Focussed: 50 minutes (gadget tracked separately)
         self.total_duration = 3600  # 60 minutes in seconds
     
     def test_compute_statistics_basic(self):
@@ -144,7 +144,7 @@ class TestAnalytics(unittest.TestCase):
         stats = compute_statistics(self.sample_events, self.total_duration)
         focus_pct = get_focus_percentage(stats)
         
-        # 50 minutes focused out of 60 total = 83.33%
+        # 50 minutes focussed out of 60 total = 83.33%
         self.assertAlmostEqual(focus_pct, 83.33, places=2)
     
     def test_get_focus_percentage_zero_duration(self):
@@ -162,7 +162,7 @@ class TestAnalytics(unittest.TestCase):
         self.assertGreater(len(summary), 0)
         self.assertIn("Session Summary", summary)
         self.assertIn("Total Duration", summary)
-        self.assertIn("Focused Time", summary)
+        self.assertIn("Focussed Time", summary)
     
     def test_summary_text_quality_messages(self):
         """Test that summary includes quality assessment."""

@@ -36,13 +36,13 @@ VISION_DETECTION_INTERVAL = 1.0  # Every 1 second
 # Line 22: Gadget confidence
 GADGET_CONFIDENCE_THRESHOLD = 0.5  # 50% confidence
 
-# Line 31: FPS (how often to analyze)
+# Line 31: FPS (how often to analyse)
 DETECTION_FPS = 1  # 1 frame per second
 ```
 
 ## 🎯 To Reduce Costs
 
-**Option 1: Analyze less frequently**
+**Option 1: Analyse less frequently**
 ```python
 DETECTION_FPS = 0.5  # Every 2 seconds (cuts cost in half)
 ```
@@ -111,7 +111,7 @@ The system detects **active gadget usage** (phones, tablets, controllers, TV, et
 - Gadget on desk + person looking at computer/elsewhere (no attention)
 - Device screen OFF or put away
 - Controller sitting on desk, not being held
-- Device visible but person clearly focused on something else
+- Device visible but person clearly focussed on something else
 
 This prevents false positives while catching all real gadget distractions!
 
