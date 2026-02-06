@@ -416,6 +416,12 @@ class PaymentScreen:
         self._poll_interval = 3
         self._poll_timeout = 600
         
+        # Main thread payment checker (Windows compatibility)
+        # On Windows, root.after() from background threads can be unreliable.
+        # This checker runs in the main thread and monitors payment state.
+        self._main_checker_id: Optional[str] = None
+        self._main_checker_interval = 500  # Check every 500ms
+        
         # UI references
         self.main_frame: Optional[ctk.CTkFrame] = None
         self.verify_button: Optional[RoundedButton] = None
@@ -852,6 +858,80 @@ class PaymentScreen:
         else:
             self.session_entry.show_info(message, persistent=persistent)
     
+    def _start_main_thread_checker(self):
+        """
+        Start the main-thread payment checker.
+        
+        This is a safety mechanism for Windows where root.after() calls from
+        background threads may not execute reliably. The checker runs in the
+        main thread and monitors the payment state flags set by background
+        polling.
+        
+        On macOS this is redundant but harmless - the background thread's
+        root.after() calls will typically trigger activation first.
+        """
+        # Cancel any existing checker
+        self._stop_main_thread_checker()
+        
+        def check_payment_state():
+            """Periodic check for payment completion in main thread."""
+            # Check if payment is ready (set by background polling)
+            session_id = None
+            payment_info = None
+            should_activate = False
+            
+            with self._polling_lock:
+                # Already activated - stop checking
+                if self._payment_detected:
+                    logger.debug("Main thread checker: already activated, stopping")
+                    return
+                
+                # Payment ready - proceed with activation
+                if self._payment_ready and self._payment_session_id and self._payment_info:
+                    logger.info("Main thread checker detected payment - activating")
+                    self._payment_detected = True
+                    self._payment_ready = False
+                    session_id = self._payment_session_id
+                    payment_info = self._payment_info
+                    self._payment_session_id = None
+                    self._payment_info = None
+                    should_activate = True
+            
+            if should_activate:
+                # Update status and complete activation
+                self._update_status("Payment successful!", is_success=True)
+                self.root.after(1500, lambda: self._complete_activation(session_id, payment_info))
+                return
+            
+            # Continue checking if still waiting for payment
+            with self._polling_lock:
+                still_polling = self._polling_active
+            
+            if still_polling:
+                self._main_checker_id = self.root.after(
+                    self._main_checker_interval,
+                    check_payment_state
+                )
+            else:
+                logger.debug("Main thread checker: polling stopped, stopping checker")
+        
+        # Start the checker
+        self._main_checker_id = self.root.after(
+            self._main_checker_interval,
+            check_payment_state
+        )
+        logger.debug("Started main thread payment checker")
+    
+    def _stop_main_thread_checker(self):
+        """Stop the main-thread payment checker."""
+        if self._main_checker_id is not None:
+            try:
+                self.root.after_cancel(self._main_checker_id)
+            except Exception:
+                pass
+            self._main_checker_id = None
+            logger.debug("Stopped main thread payment checker")
+    
     def _start_payment_polling(self, session_id: str):
         """Start background polling to check payment status."""
         with self._polling_lock:
@@ -860,6 +940,9 @@ class PaymentScreen:
             
             self._polling_active = True
             self._payment_detected = False
+        
+        # Start main thread checker as Windows safety net
+        self._start_main_thread_checker()
         
         def poll_loop():
             """Background polling loop."""
@@ -921,6 +1004,9 @@ class PaymentScreen:
         """Stop the background payment polling and wait for thread to finish."""
         with self._polling_lock:
             self._polling_active = False
+        
+        # Stop main thread checker
+        self._stop_main_thread_checker()
         
         if self._polling_thread is not None and self._polling_thread.is_alive():
             self._polling_thread.join(timeout=2.0)
@@ -1275,12 +1361,15 @@ class PaymentScreen:
         except Exception:
             pass
         
-        # Cancel any pending resize callback
+        # Cancel any pending callbacks
         if hasattr(self, '_resize_after_id'):
             try:
                 self.root.after_cancel(self._resize_after_id)
             except Exception:
                 pass
+        
+        # Stop main thread checker explicitly (also done in _stop_payment_polling)
+        self._stop_main_thread_checker()
         
         self._payment_ready = False
         self._payment_session_id = None
@@ -1311,12 +1400,15 @@ class PaymentScreen:
         except Exception:
             pass
         
-        # Cancel any pending resize callback
+        # Cancel any pending callbacks
         if hasattr(self, '_resize_after_id'):
             try:
                 self.root.after_cancel(self._resize_after_id)
             except Exception:
                 pass
+        
+        # Stop main thread checker explicitly (also done in _stop_payment_polling)
+        self._stop_main_thread_checker()
         
         self._payment_ready = False
         self._payment_session_id = None
