@@ -347,13 +347,11 @@ class Blocklist:
                         logger.debug(f"Distraction detected: '{pattern}' matched window title")
                         return True, pattern
                     
-                    # For browsers: check if domain name appears in page title
-                    # This is a fallback when URL is not available or URL matching failed
-                    # e.g., "youtube.com" -> check for "youtube" in page title
-                    if page_title_lower:
+                    # Only fall back to page title when URL is truly unavailable
+                    if page_title_lower and not url_lower:
                         domain_name = self._extract_domain_name(pattern_lower)
                         if domain_name and self._match_site_in_title(domain_name, page_title_lower):
-                            logger.debug(f"Distraction detected: '{pattern}' matched page title '{page_title[:50]}'")
+                            logger.debug(f"Distraction detected: '{pattern}' matched page title '{(page_title or '')[:50]}'")
                             return True, pattern
                 else:
                     # App name matching: use simple substring match
@@ -413,50 +411,100 @@ class Blocklist:
     
     def _match_site_in_title(self, site_name: str, title: str) -> bool:
         """
-        Check if a site name appears in a page title with word boundary awareness.
+        Check if a site name appears in a page title in a structural position.
         
-        Prevents false positives like "tube" matching "YouTube" when looking for
-        just "tube" (though "youtube" should match "YouTube").
+        Only matches when the site is the primary subject (exact match, start
+        or end of title after a separator). Never matches casual mentions
+        like "Share to Twitter". For X/Twitter, only matches the exact end
+        pattern " / X" to avoid matching the letter "x" everywhere.
         
         Args:
             site_name: Site name to search for (lowercase, e.g., "youtube")
             title: Page title to search in (lowercase)
             
         Returns:
-            True if site appears to be present in title
+            True if site appears in a structural position in title
         """
         if not site_name or not title:
             return False
         
-        # Common site name variations that should match
-        # Map site names to common variations found in page titles
-        site_title_variations = {
-            "youtube": ["youtube", "yt"],
-            "facebook": ["facebook", "fb"],
-            "instagram": ["instagram", "ig"],
-            "twitter": ["twitter", "x "],  # Note: "x " with space to avoid matching random x's
-            "tiktok": ["tiktok", "tik tok"],
-            "reddit": ["reddit"],
-            "netflix": ["netflix"],
-            "twitch": ["twitch"],
-            "discord": ["discord"],
-            "whatsapp": ["whatsapp"],
-            "telegram": ["telegram"],
-            "snapchat": ["snapchat"],
-            "pinterest": ["pinterest"],
-            "linkedin": ["linkedin"],
+        # Structured patterns: how each site may appear in page titles.
+        # "position" = exact match, or at start/end after separator.
+        # "exact_end_patterns" = only match if title ends with that string (for X).
+        site_title_patterns = {
+            "youtube": {"variations": ["youtube", "yt"], "mode": "position"},
+            "facebook": {"variations": ["facebook", "fb"], "mode": "position"},
+            "instagram": {"variations": ["instagram", "ig"], "mode": "position"},
+            "twitter": {
+                "variations": ["twitter"],
+                "mode": "position",
+                "exact_end_patterns": [" / x"],  # X.com titles always end "... / X"
+            },
+            "tiktok": {"variations": ["tiktok", "tik tok"], "mode": "position"},
+            "reddit": {"variations": ["reddit"], "mode": "position"},
+            "netflix": {"variations": ["netflix"], "mode": "position"},
+            "twitch": {"variations": ["twitch"], "mode": "position"},
+            "discord": {"variations": ["discord"], "mode": "position"},
+            "whatsapp": {"variations": ["whatsapp"], "mode": "position"},
+            "telegram": {"variations": ["telegram"], "mode": "position"},
+            "snapchat": {"variations": ["snapchat"], "mode": "position"},
+            "pinterest": {"variations": ["pinterest"], "mode": "position"},
+            "linkedin": {"variations": ["linkedin"], "mode": "position"},
         }
         
-        # Check if we have known variations for this site
-        if site_name in site_title_variations:
-            for variation in site_title_variations[site_name]:
-                if variation in title:
+        config = site_title_patterns.get(site_name)
+        if not config:
+            return False
+        
+        # X/Twitter: only match exact end patterns, never "x" as substring
+        exact_end = config.get("exact_end_patterns") or []
+        for pattern in exact_end:
+            if title.endswith(pattern):
+                return True
+        
+        # Position-aware matching for variations
+        separators = (" - ", " | ", " / ", " -- ")
+        short_name_max_len = 3  # variations this short only match exact or end-of-title
+        
+        for variation in config.get("variations", []):
+            if self._title_matches_variation(variation, title, separators, short_name_max_len):
+                return True
+        
+        return False
+    
+    def _title_matches_variation(
+        self, variation: str, title: str, separators: tuple, short_name_max_len: int
+    ) -> bool:
+        """
+        Check if a variation appears in title in a structural position.
+        
+        Matches: exact title, end-of-title after separator, or (for longer
+        names) start-of-title before separator. Short variations (e.g. yt, fb)
+        only match exact or end-of-title to avoid false positives.
+        """
+        if not variation or not title:
+            return False
+        
+        # Exact match
+        if title == variation or title.strip() == variation:
+            return True
+        
+        # End-of-title: last segment after a separator equals variation
+        for sep in separators:
+            if sep in title:
+                segments = title.split(sep)
+                last = segments[-1].strip() if segments else ""
+                if last == variation:
                     return True
         
-        # Default: simple substring check for the site name
-        # This catches cases where the site name appears in the title
-        # e.g., "YouTube - Watching videos" contains "youtube"
-        return site_name in title
+        # Start-of-title: only for variations longer than short_name_max_len
+        if len(variation) <= short_name_max_len:
+            return False
+        for sep in separators:
+            if title.startswith(variation + sep):
+                return True
+        
+        return False
     
     def _match_domain(self, pattern: str, text: str) -> bool:
         """

@@ -275,6 +275,156 @@ class TestXComPatternFix(unittest.TestCase):
         self.assertTrue(is_distracted)
 
 
+class TestStrictPageTitleMatching(unittest.TestCase):
+    """Test stricter page-title matching to avoid false positives (e.g. Twitter when not open)."""
+
+    def setUp(self):
+        """Use a blocklist with only Twitter enabled so other categories (e.g. Xbox) don't match."""
+        from screen.blocklist import Blocklist
+        self.blocklist = Blocklist()
+        self.blocklist.enabled_categories = set()
+        self.blocklist.enabled_quick_sites = {"twitter"}
+
+    def test_share_to_twitter_does_not_match(self):
+        """Casual mention 'Share to Twitter' must not be flagged as Twitter."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Share to Twitter"
+        )
+        self.assertFalse(is_distracted, "Share to Twitter should not match twitter")
+
+    def test_sign_in_with_twitter_does_not_match(self):
+        """'Sign in with Twitter' is not the site identifier."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Sign in with Twitter - SomeApp"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_xbox_does_not_match_twitter(self):
+        """Xbox and other 'x' substrings must not trigger Twitter."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Xbox Game Pass"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_spacex_does_not_match_twitter(self):
+        """SpaceX contains 'x' but is not X.com."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="SpaceX Launch - Google Chrome"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_fox_news_does_not_match_twitter(self):
+        """'fox' contains 'x' - must not match."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="fox news - Google Chrome"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_x_button_settings_does_not_match(self):
+        """'X button' is not the X brand."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="X button settings"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_max_settings_does_not_match(self):
+        """'max' has 'x' - must not match."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="max settings"
+        )
+        self.assertFalse(is_distracted)
+
+    def test_home_slash_x_matches_twitter(self):
+        """Real X.com page titles end with ' / X'."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Home / X"
+        )
+        self.assertTrue(is_distracted, "Home / X should match twitter/x")
+
+    def test_username_slash_x_matches_twitter(self):
+        """X.com profile pages: 'Username (@handle) / X'."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Username (@handle) / X"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_twitter_exact_match(self):
+        """Exact title 'Twitter' should match."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Twitter"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_twitter_at_start_matches(self):
+        """'Twitter - Home' has site at start before separator."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Twitter - Home"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_twitter_at_end_matches(self):
+        """'Some tweet - Twitter' has site at end after separator."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Some tweet - Twitter"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_youtube_exact_match(self):
+        """YouTube exact match (enable youtube and check)."""
+        self.blocklist.enable_quick_site("youtube")
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="YouTube"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_youtube_end_of_title_matches(self):
+        """'Video Title - YouTube' has site at end."""
+        self.blocklist.enable_quick_site("youtube")
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Video Title - YouTube"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_netflix_start_of_title_matches(self):
+        """'Netflix - Browse' has site at start."""
+        self.blocklist.enable_quick_site("netflix")
+        is_distracted, _ = self.blocklist.check_distraction(
+            url=None,
+            page_title="Netflix - Browse"
+        )
+        self.assertTrue(is_distracted)
+
+    def test_url_overrides_title_no_false_positive(self):
+        """When URL is present, page title is not used; example.com + 'Share to Twitter' title must not match."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url="https://example.com/share-to-twitter",
+            page_title="Share to Twitter"
+        )
+        self.assertFalse(is_distracted, "URL is authoritative; title should be ignored when URL present")
+
+    def test_twitter_url_matches_without_title(self):
+        """twitter.com URL should match even with no page title."""
+        is_distracted, _ = self.blocklist.check_distraction(
+            url="https://twitter.com/home",
+            page_title=None
+        )
+        self.assertTrue(is_distracted)
+
+
 class TestTimestampGapFix(unittest.TestCase):
     """Test that event timestamps are continuous."""
     

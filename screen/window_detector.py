@@ -361,9 +361,11 @@ class WindowDetector:
             page_title = None
             
             if is_browser:
-                # Extract page title from window title (works for all browsers)
+                # Try to get URL (works with pywinauto or ctypes UI Automation)
+                url = self._get_browser_url_windows(hwnd, app_name_lower)
+                # Extract page title from window title as fallback
                 page_title = self._extract_page_title_from_window(window_title)
-                logger.debug(f"Windows browser detected: {app_name}, page_title='{page_title}'")
+                logger.debug(f"Windows browser detected: {app_name}, url={url is not None}, page_title='{page_title}'")
             
             return WindowInfo(
                 app_name=app_name,
