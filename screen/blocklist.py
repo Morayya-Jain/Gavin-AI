@@ -205,6 +205,30 @@ QUICK_SITES = {
 }
 
 
+# Page-title matching: structural positions only (exact, start/end after separator).
+# Used when URL is unavailable; avoids false positives like "Share to Twitter".
+SITE_TITLE_PATTERNS = {
+    "youtube": {"variations": ["youtube", "yt"], "mode": "position"},
+    "facebook": {"variations": ["facebook", "fb"], "mode": "position"},
+    "instagram": {"variations": ["instagram", "ig"], "mode": "position"},
+    "twitter": {
+        "variations": ["twitter"],
+        "mode": "position",
+        "exact_end_patterns": [" / x"],  # X.com titles always end "... / X"
+    },
+    "tiktok": {"variations": ["tiktok", "tik tok"], "mode": "position"},
+    "reddit": {"variations": ["reddit"], "mode": "position"},
+    "netflix": {"variations": ["netflix"], "mode": "position"},
+    "twitch": {"variations": ["twitch"], "mode": "position"},
+    "discord": {"variations": ["discord"], "mode": "position"},
+    "whatsapp": {"variations": ["whatsapp"], "mode": "position"},
+    "telegram": {"variations": ["telegram"], "mode": "position"},
+    "snapchat": {"variations": ["snapchat"], "mode": "position"},
+    "pinterest": {"variations": ["pinterest"], "mode": "position"},
+    "linkedin": {"variations": ["linkedin"], "mode": "position"},
+}
+
+
 @dataclass
 class Blocklist:
     """
@@ -428,31 +452,7 @@ class Blocklist:
         if not site_name or not title:
             return False
         
-        # Structured patterns: how each site may appear in page titles.
-        # "position" = exact match, or at start/end after separator.
-        # "exact_end_patterns" = only match if title ends with that string (for X).
-        site_title_patterns = {
-            "youtube": {"variations": ["youtube", "yt"], "mode": "position"},
-            "facebook": {"variations": ["facebook", "fb"], "mode": "position"},
-            "instagram": {"variations": ["instagram", "ig"], "mode": "position"},
-            "twitter": {
-                "variations": ["twitter"],
-                "mode": "position",
-                "exact_end_patterns": [" / x"],  # X.com titles always end "... / X"
-            },
-            "tiktok": {"variations": ["tiktok", "tik tok"], "mode": "position"},
-            "reddit": {"variations": ["reddit"], "mode": "position"},
-            "netflix": {"variations": ["netflix"], "mode": "position"},
-            "twitch": {"variations": ["twitch"], "mode": "position"},
-            "discord": {"variations": ["discord"], "mode": "position"},
-            "whatsapp": {"variations": ["whatsapp"], "mode": "position"},
-            "telegram": {"variations": ["telegram"], "mode": "position"},
-            "snapchat": {"variations": ["snapchat"], "mode": "position"},
-            "pinterest": {"variations": ["pinterest"], "mode": "position"},
-            "linkedin": {"variations": ["linkedin"], "mode": "position"},
-        }
-        
-        config = site_title_patterns.get(site_name)
+        config = SITE_TITLE_PATTERNS.get(site_name)
         if not config:
             return False
         
