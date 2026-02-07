@@ -3,31 +3,22 @@
 BrainDock - Main Entry Point
 
 A local AI-powered focus tracker that monitors presence and phone usage
-via webcam, logs events, and generates PDF reports with
-OpenAI-powered insights.
+via webcam, logs events, and generates PDF reports with AI-powered insights.
 
 Usage:
-    python main.py          # Launch GUI (default)
+    python main.py          # Launch menu bar app (default)
     python main.py --cli    # Launch CLI mode
-    python main.py --gui    # Launch GUI mode (explicit)
 """
 
 # =============================================================================
 # PyInstaller bundled app path fix - MUST BE BEFORE ANY OTHER IMPORTS
-# This ensures CustomTkinter and other packages can find their assets
-# when running from a PyInstaller bundle.
-# See: https://github.com/TomSchimansky/CustomTkinter/issues/1374
 # =============================================================================
 import os
 import sys
 
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    # Running as a PyInstaller bundle
-    # Change working directory to the extraction folder so CustomTkinter
-    # can find its assets (themes, fonts) relative to the module location
     _bundle_dir = sys._MEIPASS
     os.chdir(_bundle_dir)
-    # Also ensure the bundle directory is in the Python path
     if _bundle_dir not in sys.path:
         sys.path.insert(0, _bundle_dir)
 
@@ -365,146 +356,62 @@ def main_cli():
     tracker.end_session()
 
 
-def main_gui():
-    """Run the GUI version of the application."""
-    from gui.app import main as gui_main
-    gui_main()
+def main_menubar():
+    """Run the menu bar / system tray application."""
+    from menubar import run_menubar_app
+    run_menubar_app()
 
 
 def main():
     """
-    Main entry point - parses arguments and launches appropriate mode.
-    
-    Default mode is GUI unless --cli is specified.
+    Main entry point — parses arguments and launches appropriate mode.
+
+    Default mode is menu bar unless --cli is specified.
     """
     parser = argparse.ArgumentParser(
         description="BrainDock - AI-Powered Focus Tracker",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py          Launch GUI (default)
-  python main.py --gui    Launch GUI explicitly
+  python main.py          Launch menu bar app (default)
   python main.py --cli    Launch CLI mode
         """
     )
     parser.add_argument(
         "--cli",
         action="store_true",
-        help="Run in CLI mode (terminal-based)"
+        help="Run in CLI mode (terminal-based)",
     )
-    parser.add_argument(
-        "--gui",
-        action="store_true",
-        help="Run in GUI mode (default)"
-    )
-    
+
     args = parser.parse_args()
-    
-    # Check for existing instance (single instance enforcement)
+
+    # Single instance enforcement
     if not check_single_instance():
         existing_pid = get_existing_pid()
         pid_info = f" (PID: {existing_pid})" if existing_pid else ""
-        
-        if args.cli:
-            print("\n❌ BrainDock is already running" + pid_info)
-            print("   Only one instance can run at a time.")
-            print("   Please close the other instance first.\n")
-        else:
-            # For GUI mode, show a dialog that appears in front
-            try:
-                import tkinter as tk
-                from gui.ui_components import get_screen_scale_factor, normalize_tk_scaling
-                
-                # Create a custom topmost dialog instead of using messagebox
-                root = tk.Tk()
-                root.title("BrainDock Already Running")
-                
-                # Normalize tk scaling for consistent rendering in bundled apps
-                normalize_tk_scaling(root)
-                
-                # Calculate scaled dialog size based on screen
-                screen_scale = get_screen_scale_factor(root)
-                dialog_width = int(400 * screen_scale)
-                dialog_height = int(180 * screen_scale)
-                
-                root.geometry(f"{dialog_width}x{dialog_height}")
-                root.resizable(False, False)
-                
-                # Force to front on all platforms
-                root.attributes('-topmost', True)
-                root.lift()
-                root.focus_force()
-                
-                # macOS-specific: bring to front
-                if sys.platform == "darwin":
-                    root.createcommand('tk::mac::ReopenApplication', root.lift)
-                    # Use Tcl to activate
-                    root.tk.call('wm', 'attributes', '.', '-topmost', '1')
-                
-                root.update_idletasks()
-                
-                # Center on screen
-                x = (root.winfo_screenwidth() - dialog_width) // 2
-                y = (root.winfo_screenheight() - dialog_height) // 2
-                root.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
-                
-                # Error icon and message
-                frame = tk.Frame(root, padx=20, pady=20)
-                frame.pack(fill="both", expand=True)
-                
-                tk.Label(
-                    frame,
-                    text="⚠️",
-                    font=("Helvetica", 34)
-                ).pack(pady=(0, 10))
-                
-                tk.Label(
-                    frame,
-                    text=f"Another instance of BrainDock is already running{pid_info}.\n\n"
-                         "Only one instance can run at a time.\n"
-                         "Please close the other instance first.",
-                    justify="center",
-                    wraplength=350
-                ).pack()
-                
-                tk.Button(
-                    frame,
-                    text="OK",
-                    command=root.destroy,
-                    width=10
-                ).pack(pady=(15, 0))
-                
-                # Keep on top
-                root.after(100, lambda: root.attributes('-topmost', True))
-                root.mainloop()
-                
-            except Exception:
-                # Fallback to console if tkinter fails
-                print("\n❌ BrainDock is already running" + pid_info)
-                print("   Only one instance can run at a time.\n")
-        
+        print(f"\nBrainDock is already running{pid_info}.")
+        print("Only one instance can run at a time.\n")
         sys.exit(1)
-    
-    # CLI mode if explicitly requested
+
     if args.cli:
         try:
             main_cli()
         except KeyboardInterrupt:
-            print("\n\n👋 Goodbye!")
+            print("\n\nGoodbye!")
             sys.exit(0)
         except Exception as e:
             logger.error(f"Fatal error: {e}", exc_info=True)
-            print(f"\n❌ Fatal error: {e}")
+            print(f"\nFatal error: {e}")
             sys.exit(1)
     else:
-        # Default to GUI mode
+        # Default to menu bar app
         try:
-            main_gui()
+            main_menubar()
         except KeyboardInterrupt:
             sys.exit(0)
         except Exception as e:
             logger.error(f"Fatal error: {e}", exc_info=True)
-            print(f"\n❌ Fatal error: {e}")
+            print(f"\nFatal error: {e}")
             sys.exit(1)
 
 

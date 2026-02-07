@@ -291,33 +291,13 @@ MVP_EXTENSION_SECONDS = 7200  # Time added per password unlock in seconds (defau
 MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")  # Password to unlock more time
 USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
 
-# Stripe Payment Configuration
-# Get your keys from: https://dashboard.stripe.com/apikeys
-# Bundled Stripe keys - reuse the bundled_keys module if already imported above
-# Note: bundled_keys import is attempted once at the API key section above
-_BUNDLED_STRIPE_SECRET = ""
-_BUNDLED_STRIPE_PUBLISHABLE = ""
-_BUNDLED_STRIPE_PRICE_ID = ""
+# Supabase Configuration (auth, settings sync, session upload)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
-if _bundled_keys_available:
-    # Reuse the bundled_keys module imported earlier
-    _BUNDLED_STRIPE_SECRET = bundled_keys.get_key("STRIPE_SECRET_KEY")
-    _BUNDLED_STRIPE_PUBLISHABLE = bundled_keys.get_key("STRIPE_PUBLISHABLE_KEY")
-    _BUNDLED_STRIPE_PRICE_ID = bundled_keys.get_key("STRIPE_PRICE_ID")
-else:
-    # Development mode or bundled_keys not available
-    # Fall back to environment variables (old method, for backwards compatibility)
-    _BUNDLED_STRIPE_SECRET = os.getenv("BUNDLED_STRIPE_SECRET_KEY", "")
-    _BUNDLED_STRIPE_PUBLISHABLE = os.getenv("BUNDLED_STRIPE_PUBLISHABLE_KEY", "")
-    _BUNDLED_STRIPE_PRICE_ID = os.getenv("BUNDLED_STRIPE_PRICE_ID", "")
+# Web dashboard URL (opened by "Open Dashboard" menu item)
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://braindock.com")
 
-STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET, "stripe_secret")
-STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE, "stripe_publishable")
-STRIPE_PRICE_ID = _get_api_key("STRIPE_PRICE_ID", _BUNDLED_STRIPE_PRICE_ID)  # No validation for price ID
-PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "AUD 1.99 - One-Time Payment")  # Display text
-# Require Terms of Service acceptance at checkout (must configure T&C URL in Stripe Dashboard first)
-STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true", "1", "yes")
-
-# Licensing Configuration
+# Licensing Configuration (offline fallback — Supabase is the primary source)
 LICENSE_FILE = USER_DATA_DIR / "license.json"  # User's license (persists)
 SKIP_LICENSE_CHECK = os.getenv("SKIP_LICENSE_CHECK", "").lower() in ("true", "1", "yes")
