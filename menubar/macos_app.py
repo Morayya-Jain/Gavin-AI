@@ -3,6 +3,9 @@ BrainDock macOS menu bar application using rumps.
 
 Provides a native macOS menu bar icon with session controls,
 mode toggle, dashboard link, report download, and auth.
+
+Auth-gated: if no user is logged in, only Log In / Sign Up / Quit
+are shown. All session features require an authenticated account.
 """
 
 import sys
@@ -20,7 +23,7 @@ from sync.supabase_client import BrainDockSync
 
 logger = logging.getLogger(__name__)
 
-# Resolve icon path (use existing logo, fall back to text title)
+# Resolve icon path
 _ASSETS_DIR = config.BASE_DIR / "assets"
 _ICON_PATH = _ASSETS_DIR / "menu_icon.png"
 _FALLBACK_ICON = _ASSETS_DIR / "logo_icon.png"
@@ -44,11 +47,11 @@ class BrainDockMenuBar(rumps.App):
         super().__init__(
             name="BrainDock",
             icon=icon_path,
-            template=True,  # Auto dark/light mode
-            quit_button=None,  # Custom quit for cleanup
+            template=True,
+            quit_button=None,
         )
 
-        # Core engine
+        # Core engine (created but not used until authenticated)
         self.engine = SessionEngine()
         self.engine.on_status_change = self._on_status_change
         self.engine.on_session_ended = self._on_session_ended
@@ -58,7 +61,7 @@ class BrainDockMenuBar(rumps.App):
         # Sync client
         self.sync = BrainDockSync()
 
-        # --- Build menu items ---
+        # --- Create all menu items (reused across rebuilds) ---
 
         # Status display (non-clickable)
         self.status_item = rumps.MenuItem("Ready to start")
@@ -72,81 +75,78 @@ class BrainDockMenuBar(rumps.App):
         self.start_stop_item = rumps.MenuItem(
             "Start Session", callback=self._toggle_session
         )
-        self.pause_item = rumps.MenuItem(
-            "Pause", callback=self._toggle_pause
-        )
-        self.pause_item.set_callback(None)  # Hidden until session starts
+        self.pause_item = rumps.MenuItem("Pause", callback=self._toggle_pause)
+        self.pause_item.set_callback(None)
 
         # Mode selection submenu
         self.mode_camera = rumps.MenuItem("Camera", callback=self._set_mode_camera)
         self.mode_screen = rumps.MenuItem("Screen", callback=self._set_mode_screen)
         self.mode_both = rumps.MenuItem("Both", callback=self._set_mode_both)
-        self.mode_camera.state = 1  # Checked by default
+        self.mode_camera.state = 1
         self.mode_menu = rumps.MenuItem("Mode")
         self.mode_menu.update([self.mode_camera, self.mode_screen, self.mode_both])
 
         # Utility items
-        self.dashboard_item = rumps.MenuItem(
-            "Open Dashboard", callback=self._open_dashboard
-        )
-        self.report_item = rumps.MenuItem(
-            "Download Last Report", callback=self._download_report
-        )
+        self.dashboard_item = rumps.MenuItem("Open Dashboard", callback=self._open_dashboard)
+        self.report_item = rumps.MenuItem("Download Last Report", callback=self._download_report)
 
         # Account items
-        email = self.sync.get_stored_email()
-        self.account_item = rumps.MenuItem(email or "Not logged in")
+        self.account_item = rumps.MenuItem("")
         self.account_item.set_callback(None)
-
         self.login_item = rumps.MenuItem("Log In", callback=self._login)
         self.signup_item = rumps.MenuItem("Sign Up", callback=self._signup)
         self.logout_item = rumps.MenuItem("Log Out", callback=self._logout)
-
         self.quit_item = rumps.MenuItem("Quit BrainDock", callback=self._quit_app)
 
-        # Assemble menu
+        # Build the menu based on auth state
         self._build_menu()
 
-        # Pre-warm camera on Windows (no-op on macOS but kept for consistency)
-        self.engine.prewarm_camera()
+    # ------------------------------------------------------------------
+    # Menu building (auth-gated)
+    # ------------------------------------------------------------------
 
-        # Try to apply cloud settings on launch
-        self._apply_cloud_settings()
+    def _is_logged_in(self) -> bool:
+        """Check if user has a stored auth session."""
+        return bool(self.sync.get_stored_email())
 
     def _build_menu(self) -> None:
-        """Build / rebuild the full menu structure."""
-        is_authed = self.sync.is_available() and self.sync.is_authenticated()
-
-        items = [
-            self.status_item,
-            self.timer_item,
-            None,  # Separator
-            self.start_stop_item,
-            self.pause_item,
-            None,
-            self.mode_menu,
-            None,
-            self.dashboard_item,
-            self.report_item,
-            None,
-            self.account_item,
-        ]
-
-        if is_authed:
-            items.append(self.logout_item)
-        else:
-            items.append(self.login_item)
-            items.append(self.signup_item)
-
-        items.append(None)
-        items.append(self.quit_item)
-
+        """Build the menu. Only shows session features if logged in."""
         self.menu.clear()
-        for item in items:
-            if item is None:
-                self.menu.add(rumps.separator)
-            else:
-                self.menu.add(item)
+
+        if self._is_logged_in():
+            self._build_authenticated_menu()
+        else:
+            self._build_unauthenticated_menu()
+
+    def _build_unauthenticated_menu(self) -> None:
+        """Menu for users who haven't logged in yet."""
+        self.menu.add(rumps.MenuItem("BrainDock", callback=None))
+        self.menu.add(rumps.separator)
+        self.menu.add(self.login_item)
+        self.menu.add(self.signup_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.quit_item)
+
+    def _build_authenticated_menu(self) -> None:
+        """Full menu for logged-in users."""
+        email = self.sync.get_stored_email()
+        self.account_item.title = email
+
+        self.menu.add(self.status_item)
+        self.menu.add(self.timer_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.start_stop_item)
+        self.menu.add(self.pause_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.mode_menu)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.dashboard_item)
+        self.menu.add(self.report_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.account_item)
+        self.menu.add(self.logout_item)
+        self.menu.add(rumps.separator)
+        self.menu.add(self.quit_item)
 
     # ------------------------------------------------------------------
     # Timer (polls engine every second)
@@ -227,29 +227,24 @@ class BrainDockMenuBar(rumps.App):
 
     def _set_mode_camera(self, sender) -> None:
         """Switch to camera-only mode."""
-        self._apply_mode(config.MODE_CAMERA_ONLY)
+        self.engine.set_monitoring_mode(config.MODE_CAMERA_ONLY)
         self.mode_camera.state = 1
         self.mode_screen.state = 0
         self.mode_both.state = 0
 
     def _set_mode_screen(self, sender) -> None:
         """Switch to screen-only mode."""
-        self._apply_mode(config.MODE_SCREEN_ONLY)
+        self.engine.set_monitoring_mode(config.MODE_SCREEN_ONLY)
         self.mode_camera.state = 0
         self.mode_screen.state = 1
         self.mode_both.state = 0
 
     def _set_mode_both(self, sender) -> None:
         """Switch to both (camera + screen) mode."""
-        self._apply_mode(config.MODE_BOTH)
+        self.engine.set_monitoring_mode(config.MODE_BOTH)
         self.mode_camera.state = 0
         self.mode_screen.state = 0
         self.mode_both.state = 1
-
-    def _apply_mode(self, mode: str) -> None:
-        """Apply a monitoring mode to the engine."""
-        self.engine.set_monitoring_mode(mode)
-        logger.info(f"Mode changed to: {mode}")
 
     # ------------------------------------------------------------------
     # Utility items
@@ -281,8 +276,12 @@ class BrainDockMenuBar(rumps.App):
         url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
         success = self.sync.login_with_browser(dashboard_url=url)
         if success:
-            self.account_item.title = self.sync.get_stored_email() or "Logged in"
+            # Rebuild menu to show full controls
             self._build_menu()
+            # Fetch settings now that we're authenticated
+            self._apply_cloud_settings()
+            # Pre-warm camera
+            self.engine.prewarm_camera()
             rumps.notification(
                 title="BrainDock",
                 subtitle="",
@@ -298,23 +297,26 @@ class BrainDockMenuBar(rumps.App):
 
     def _logout(self, sender) -> None:
         """Log out and clear stored tokens."""
+        # Stop any running session first
+        if self.engine.is_running:
+            self.engine.stop_session()
+
         self.sync.logout()
-        self.account_item.title = "Not logged in"
+        # Rebuild menu to show only login/signup
         self._build_menu()
         logger.info("User logged out")
 
     # ------------------------------------------------------------------
-    # Cloud settings
+    # Cloud settings (only called when authenticated)
     # ------------------------------------------------------------------
 
     def _apply_cloud_settings(self) -> None:
         """Fetch settings from cloud and apply to engine."""
-        if not self.sync.is_available():
+        if not self.sync.is_available() or not self._is_logged_in():
             return
         try:
             settings = self.sync.fetch_settings()
 
-            # Apply monitoring mode (but don't override local selection)
             mode = settings.get("monitoring_mode", self.engine.monitoring_mode)
             self.engine.set_monitoring_mode(mode)
 
@@ -323,7 +325,6 @@ class BrainDockMenuBar(rumps.App):
             self.mode_screen.state = 1 if mode == config.MODE_SCREEN_ONLY else 0
             self.mode_both.state = 1 if mode == config.MODE_BOTH else 0
 
-            # Apply blocklist
             blocklist = BrainDockSync.cloud_settings_to_blocklist(settings)
             self.engine.set_blocklist(blocklist)
 

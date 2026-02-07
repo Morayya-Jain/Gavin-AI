@@ -3,6 +3,9 @@ BrainDock Windows system tray application using pystray.
 
 Provides a Windows tray icon with session controls, mode toggle,
 dashboard link, report download, and auth.
+
+Auth-gated: if no user is logged in, only Log In / Sign Up / Quit
+are shown. All session features require an authenticated account.
 """
 
 import os
@@ -35,9 +38,8 @@ def _load_icon_image() -> Image.Image:
         return Image.open(str(_ICON_PATH))
     if _FALLBACK_PNG.exists():
         return Image.open(str(_FALLBACK_PNG))
-    # Create a simple fallback icon (16x16 teal square)
-    img = Image.new("RGBA", (16, 16), (34, 211, 238, 255))
-    return img
+    # Simple fallback icon (16x16 teal square)
+    return Image.new("RGBA", (16, 16), (34, 211, 238, 255))
 
 
 class BrainDockTray:
@@ -45,7 +47,7 @@ class BrainDockTray:
 
     def __init__(self) -> None:
         """Initialise the tray app, engine, and sync client."""
-        # Core engine
+        # Core engine (created but not used until authenticated)
         self.engine = SessionEngine()
         self.engine.on_status_change = self._on_status_change
         self.engine.on_session_ended = self._on_session_ended
@@ -55,7 +57,7 @@ class BrainDockTray:
         # Sync client
         self.sync = BrainDockSync()
 
-        # Status text (updated by callbacks)
+        # Status text
         self._status_text: str = "Ready to start"
 
         # Load icon
@@ -65,7 +67,7 @@ class BrainDockTray:
         self.icon = pystray.Icon(
             name="BrainDock",
             icon=self._icon_image,
-            title="BrainDock — Ready",
+            title="BrainDock",
             menu=self._build_menu(),
         )
 
@@ -73,18 +75,33 @@ class BrainDockTray:
         self._timer_running: bool = True
         self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
 
-        # Pre-warm camera
-        self.engine.prewarm_camera()
-
-        # Apply cloud settings
-        self._apply_cloud_settings()
-
     # ------------------------------------------------------------------
-    # Menu construction (rebuilt dynamically via lambdas)
+    # Menu building (auth-gated)
     # ------------------------------------------------------------------
+
+    def _is_logged_in(self) -> bool:
+        """Check if user has a stored auth session."""
+        return bool(self.sync.get_stored_email())
 
     def _build_menu(self) -> pystray.Menu:
-        """Build the tray context menu."""
+        """Build the tray menu. Only shows session features if logged in."""
+        if self._is_logged_in():
+            return self._build_authenticated_menu()
+        return self._build_unauthenticated_menu()
+
+    def _build_unauthenticated_menu(self) -> pystray.Menu:
+        """Menu for users who haven't logged in yet."""
+        return pystray.Menu(
+            pystray.MenuItem("BrainDock", None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Log In", self._login),
+            pystray.MenuItem("Sign Up", self._signup),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit BrainDock", self._quit_app),
+        )
+
+    def _build_authenticated_menu(self) -> pystray.Menu:
+        """Full menu for logged-in users."""
         return pystray.Menu(
             # Status (non-clickable)
             pystray.MenuItem(
@@ -107,18 +124,15 @@ class BrainDockTray:
             # Mode submenu
             pystray.MenuItem("Mode", pystray.Menu(
                 pystray.MenuItem(
-                    "Camera",
-                    self._set_mode_camera,
+                    "Camera", self._set_mode_camera,
                     checked=lambda item: self.engine.monitoring_mode == config.MODE_CAMERA_ONLY,
                 ),
                 pystray.MenuItem(
-                    "Screen",
-                    self._set_mode_screen,
+                    "Screen", self._set_mode_screen,
                     checked=lambda item: self.engine.monitoring_mode == config.MODE_SCREEN_ONLY,
                 ),
                 pystray.MenuItem(
-                    "Both",
-                    self._set_mode_both,
+                    "Both", self._set_mode_both,
                     checked=lambda item: self.engine.monitoring_mode == config.MODE_BOTH,
                 ),
             )),
@@ -127,16 +141,17 @@ class BrainDockTray:
             pystray.MenuItem("Download Last Report", self._download_report),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                lambda item: self.sync.get_stored_email() or "Not logged in",
+                lambda item: self.sync.get_stored_email() or "Account",
                 None, enabled=False,
             ),
-            pystray.MenuItem(
-                "Log Out" if self.sync.is_authenticated() else "Log In",
-                self._toggle_auth,
-            ),
+            pystray.MenuItem("Log Out", self._logout),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit BrainDock", self._quit_app),
         )
+
+    def _rebuild_menu(self) -> None:
+        """Rebuild the tray menu (after login/logout)."""
+        self.icon.menu = self._build_menu()
 
     # ------------------------------------------------------------------
     # Timer loop (background thread)
@@ -171,8 +186,6 @@ class BrainDockTray:
                 )
         else:
             result = self.engine.stop_session()
-
-            # Upload session data
             if result.get("session_data") and self.sync.is_available():
                 self.sync.upload_session(result["session_data"])
 
@@ -213,7 +226,6 @@ class BrainDockTray:
         report_path = self.engine.get_last_report_path()
         if report_path and report_path.exists():
             os.startfile(str(report_path))
-            logger.info(f"Opened report: {report_path}")
         else:
             self.icon.notify("No recent report found. Complete a session first.", "BrainDock")
 
@@ -221,30 +233,39 @@ class BrainDockTray:
     # Auth
     # ------------------------------------------------------------------
 
-    def _toggle_auth(self, icon, item) -> None:
-        """Log in or out depending on current state."""
-        if self.sync.is_authenticated():
-            self.sync.logout()
-            self.icon.notify("Logged out successfully.", "BrainDock")
-        else:
-            self._login()
-
-    def _login(self) -> None:
+    def _login(self, icon, item) -> None:
         """Start browser-based login flow."""
         url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
         success = self.sync.login_with_browser(dashboard_url=url)
         if success:
+            self._rebuild_menu()
+            self._apply_cloud_settings()
+            self.engine.prewarm_camera()
             self.icon.notify("You're now logged in!", "BrainDock")
         else:
             self.icon.notify("Login failed. Please try again.", "BrainDock Error")
 
+    def _signup(self, icon, item) -> None:
+        """Open signup page in browser."""
+        url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
+        webbrowser.open(f"{url.rstrip('/')}/auth/signup")
+
+    def _logout(self, icon, item) -> None:
+        """Log out and clear stored tokens."""
+        if self.engine.is_running:
+            self.engine.stop_session()
+        self.sync.logout()
+        self._rebuild_menu()
+        self.icon.title = "BrainDock"
+        logger.info("User logged out")
+
     # ------------------------------------------------------------------
-    # Cloud settings
+    # Cloud settings (only called when authenticated)
     # ------------------------------------------------------------------
 
     def _apply_cloud_settings(self) -> None:
         """Fetch settings from cloud and apply to engine."""
-        if not self.sync.is_available():
+        if not self.sync.is_available() or not self._is_logged_in():
             return
         try:
             settings = self.sync.fetch_settings()
@@ -276,7 +297,7 @@ class BrainDockTray:
 
     def _on_error(self, error_type: str, message: str) -> None:
         """Show error notification."""
-        self.icon.notify(message, f"BrainDock Error")
+        self.icon.notify(message, "BrainDock Error")
 
     def _on_alert(self, level: int, message: str) -> None:
         """Show unfocused alert notification."""
@@ -289,12 +310,10 @@ class BrainDockTray:
     def _quit_app(self, icon, item) -> None:
         """Clean up and quit."""
         self._timer_running = False
-
         if self.engine.is_running:
             result = self.engine.stop_session()
             if result.get("session_data") and self.sync.is_available():
                 self.sync.upload_session(result["session_data"])
-
         self.engine.cleanup()
         self.icon.stop()
 
