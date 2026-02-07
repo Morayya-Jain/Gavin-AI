@@ -16,6 +16,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs
 
 import pystray
 from PIL import Image
@@ -71,9 +72,12 @@ class BrainDockTray:
             menu=self._build_menu(),
         )
 
-        # Timer thread for updating tooltip during sessions
+        # Timer thread for updating tooltip during sessions and checking pending deep link
         self._timer_running: bool = True
         self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
+
+        # Pending deep link file (when another instance received braindock:// and handed off)
+        self._pending_deeplink_file: Path = config.USER_DATA_DIR / "pending_deeplink.txt"
 
     # ------------------------------------------------------------------
     # Menu building (auth-gated)
@@ -153,12 +157,54 @@ class BrainDockTray:
         """Rebuild the tray menu (after login/logout)."""
         self.icon.menu = self._build_menu()
 
+    def _code_from_braindock_url(self, url_string: str) -> Optional[str]:
+        """Parse braindock://callback?code=XXX and return the code, or None."""
+        if not url_string or not url_string.strip().startswith("braindock://"):
+            return None
+        parsed = urlparse(url_string.strip())
+        qs = parse_qs(parsed.query)
+        codes = qs.get("code")
+        return codes[0].strip() if codes and codes[0].strip() else None
+
+    def _process_braindock_url(self, url_string: str) -> bool:
+        """Exchange code from braindock:// URL and rebuild menu. Returns True if login succeeded."""
+        code = self._code_from_braindock_url(url_string)
+        if not code:
+            return False
+        result = self.sync.exchange_linking_code(code)
+        if not result.get("success"):
+            logger.warning("Exchange linking code failed: %s", result.get("error"))
+            return False
+        self._rebuild_menu()
+        self._apply_cloud_settings()
+        self.engine.prewarm_camera()
+        self.icon.notify("You're now logged in!", "BrainDock")
+        return True
+
+    def _process_pending_deeplink(self) -> None:
+        """If a pending deep link file exists (from second instance), process it and delete file."""
+        if not self._pending_deeplink_file.exists():
+            return
+        try:
+            url_string = self._pending_deeplink_file.read_text().strip()
+            self._pending_deeplink_file.unlink()
+            if self._process_braindock_url(url_string):
+                logger.info("Processed pending deep link login")
+            else:
+                self.icon.notify("Login failed. Please try again.", "BrainDock Error")
+        except Exception as e:
+            logger.warning("Failed to process pending deep link: %s", e)
+            try:
+                self._pending_deeplink_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
     # ------------------------------------------------------------------
     # Timer loop (background thread)
     # ------------------------------------------------------------------
 
     def _timer_loop(self) -> None:
-        """Background thread to update tray tooltip with session timer."""
+        """Background thread: update tray tooltip; check for pending deep link."""
         while self._timer_running:
             if self.engine.is_running:
                 status = self.engine.get_status()
@@ -167,6 +213,7 @@ class BrainDockTray:
                 m = (elapsed % 3600) // 60
                 s = elapsed % 60
                 self.icon.title = f"BrainDock — {h:02d}:{m:02d}:{s:02d}"
+            self._process_pending_deeplink()
             time.sleep(1)
 
     # ------------------------------------------------------------------
@@ -218,7 +265,7 @@ class BrainDockTray:
 
     def _open_dashboard(self, icon, item) -> None:
         """Open web dashboard in browser."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com/dashboard")
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com/dashboard")
         webbrowser.open(url)
 
     def _download_report(self, icon, item) -> None:
@@ -234,8 +281,15 @@ class BrainDockTray:
     # ------------------------------------------------------------------
 
     def _login(self, icon, item) -> None:
-        """Start browser-based login flow."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
+        """Start browser-based login flow (deep link when bundled, localhost callback in dev)."""
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
+        base = url.rstrip("/")
+        if config.is_bundled():
+            # Bundled app: open site; website redirects to braindock://callback?code=...
+            webbrowser.open(f"{base}/auth/login?source=desktop")
+            self.icon.notify("Complete login in the browser; the app will update when done.", "BrainDock")
+            return
+        # Development: localhost callback server
         success = self.sync.login_with_browser(dashboard_url=url)
         if success:
             self._rebuild_menu()
@@ -247,8 +301,8 @@ class BrainDockTray:
 
     def _signup(self, icon, item) -> None:
         """Open signup page in browser."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
-        webbrowser.open(f"{url.rstrip('/')}/auth/signup")
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
+        webbrowser.open(f"{url.rstrip('/')}/auth/signup/")
 
     def _logout(self, icon, item) -> None:
         """Log out and clear stored tokens."""
@@ -323,5 +377,10 @@ class BrainDockTray:
 
     def run(self) -> None:
         """Start the tray application."""
+        # Process braindock:// from argv (e.g. app launched by clicking auth callback link)
+        for arg in sys.argv[1:]:
+            if arg.strip().startswith("braindock://"):
+                self._process_braindock_url(arg)
+                break
         self._timer_thread.start()
         self.icon.run()

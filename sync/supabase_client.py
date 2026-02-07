@@ -23,6 +23,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+import httpx
 import config
 from screen.blocklist import Blocklist
 
@@ -168,6 +169,57 @@ class BrainDockSync:
             pass
         return ""
 
+    def exchange_linking_code(self, code: str) -> Dict:
+        """
+        Exchange a one-time linking code for tokens (deep link auth flow).
+
+        POSTs the code to the Supabase Edge Function exchange-linking-code,
+        then stores the returned access_token and refresh_token.
+
+        Args:
+            code: The linking code from braindock://callback?code=...
+
+        Returns:
+            {"success": True} or {"success": False, "error": str}
+        """
+        if not self._url or not self._key:
+            return {"success": False, "error": "Supabase not configured"}
+        try:
+            resp = httpx.post(
+                f"{self._url.rstrip('/')}/functions/v1/exchange-linking-code",
+                json={"code": code.strip()},
+                headers={"apikey": self._key},
+                timeout=15.0,
+            )
+            data = resp.json()
+            if resp.status_code != 200:
+                return {"success": False, "error": data.get("error", resp.text or f"HTTP {resp.status_code}")}
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
+            if not access_token or not refresh_token:
+                return {"success": False, "error": data.get("error", "No tokens in response")}
+            if self._client:
+                try:
+                    self._client.auth.set_session(access_token, refresh_token)
+                    session = self._client.auth.get_session()
+                    if session:
+                        self._save_session(session)
+                    self.register_device()
+                    return {"success": True}
+                except Exception as e:
+                    logger.error(f"Failed to set session from linking code: {e}")
+                    return {"success": False, "error": str(e)}
+            self.auth_file.parent.mkdir(parents=True, exist_ok=True)
+            self.auth_file.write_text(json.dumps({
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "email": data.get("email", ""),
+            }, indent=2))
+            return {"success": True}
+        except Exception as e:
+            logger.error(f"Exchange linking code failed: {e}")
+            return {"success": False, "error": str(e)}
+
     def login_with_browser(self, dashboard_url: str = "") -> bool:
         """
         Start browser-based login flow (Cursor-style).
@@ -184,7 +236,7 @@ class BrainDockSync:
         """
         from sync.auth_server import run_auth_callback_server
 
-        url = dashboard_url or getattr(config, "DASHBOARD_URL", "https://braindock.com")
+        url = dashboard_url or getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
 
         # Start local server and get port
         result = run_auth_callback_server(website_url=url)

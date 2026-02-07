@@ -387,6 +387,19 @@ Examples:
 
     # Single instance enforcement
     if not check_single_instance():
+        # On Windows, if this process was launched with braindock:// (e.g. auth callback),
+        # hand off the URL to the running instance via a file so it can complete login.
+        if sys.platform == "win32":
+            for arg in sys.argv[1:]:
+                if arg.strip().startswith("braindock://"):
+                    try:
+                        import config
+                        config.USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+                        pending = config.USER_DATA_DIR / "pending_deeplink.txt"
+                        pending.write_text(arg.strip())
+                    except Exception:
+                        pass
+                    break
         existing_pid = get_existing_pid()
         pid_info = f" (PID: {existing_pid})" if existing_pid else ""
         print(f"\nBrainDock is already running{pid_info}.")

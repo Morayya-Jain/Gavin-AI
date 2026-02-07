@@ -14,6 +14,7 @@ import webbrowser
 import logging
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, parse_qs
 
 import rumps
 
@@ -100,6 +101,63 @@ class BrainDockMenuBar(rumps.App):
 
         # Build the menu based on auth state
         self._build_menu()
+
+        # Register braindock:// URL handler (for deep link auth callback)
+        self._register_url_handler()
+
+    def _register_url_handler(self) -> None:
+        """Register to receive braindock:// URLs from the OS (Apple Event GURL)."""
+        try:
+            from Foundation import NSAppleEventManager
+            em = NSAppleEventManager.sharedAppleEventManager()
+            em.setEventHandler_andSelector_forEventClass_andEventID_(
+                self,
+                "_handle_url_event:withReplyEvent:",
+                int.from_bytes(b"GURL", "big"),
+                int.from_bytes(b"GURL", "big"),
+            )
+            logger.info("Registered braindock:// URL handler")
+        except Exception as e:
+            logger.warning(f"Could not register URL handler: {e}")
+
+    def _handle_url_event_withReplyEvent_(self, event, reply_event) -> None:
+        """Handle braindock:// callback from the website (extract code and exchange for tokens)."""
+        try:
+            # keyDirectObject (b'----') holds the URL string
+            desc = event.paramDescriptorForKeyword_(int.from_bytes(b"----", "big"))
+            if desc is None:
+                return
+            url_string = desc.stringValue()
+            if not url_string or not url_string.startswith("braindock://"):
+                return
+            parsed = urlparse(url_string)
+            qs = parse_qs(parsed.query)
+            code_list = qs.get("code")
+            if not code_list:
+                logger.warning("braindock:// callback had no code parameter")
+                return
+            code = code_list[0].strip()
+            if not code:
+                return
+            result = self.sync.exchange_linking_code(code)
+            if result.get("success"):
+                self._build_menu()
+                self._apply_cloud_settings()
+                self.engine.prewarm_camera()
+                rumps.notification(
+                    title="BrainDock",
+                    subtitle="",
+                    message="You're now logged in!",
+                )
+            else:
+                logger.warning(f"Exchange linking code failed: {result.get('error')}")
+                rumps.alert(
+                    title="Login Failed",
+                    message=result.get("error", "Could not complete login."),
+                )
+        except Exception as e:
+            logger.exception("Error handling braindock:// URL")
+            rumps.alert(title="Login Error", message=str(e))
 
     # ------------------------------------------------------------------
     # Menu building (auth-gated)
@@ -252,7 +310,7 @@ class BrainDockMenuBar(rumps.App):
 
     def _open_dashboard(self, sender) -> None:
         """Open web dashboard in default browser."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com/dashboard")
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com/dashboard")
         webbrowser.open(url)
 
     def _download_report(self, sender) -> None:
@@ -272,15 +330,23 @@ class BrainDockMenuBar(rumps.App):
     # ------------------------------------------------------------------
 
     def _login(self, sender) -> None:
-        """Start browser-based login flow."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
+        """Start browser-based login flow (deep link when bundled, localhost callback in dev)."""
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
+        base = url.rstrip("/")
+        if config.is_bundled():
+            # Bundled app: open site; website redirects to braindock://callback?code=...
+            webbrowser.open(f"{base}/auth/login?source=desktop")
+            rumps.notification(
+                title="BrainDock",
+                subtitle="",
+                message="Complete login in the browser; the app will update when done.",
+            )
+            return
+        # Development: localhost callback server
         success = self.sync.login_with_browser(dashboard_url=url)
         if success:
-            # Rebuild menu to show full controls
             self._build_menu()
-            # Fetch settings now that we're authenticated
             self._apply_cloud_settings()
-            # Pre-warm camera
             self.engine.prewarm_camera()
             rumps.notification(
                 title="BrainDock",
@@ -292,8 +358,8 @@ class BrainDockMenuBar(rumps.App):
 
     def _signup(self, sender) -> None:
         """Open signup page in browser."""
-        url = getattr(config, "DASHBOARD_URL", "https://braindock.com")
-        webbrowser.open(f"{url.rstrip('/')}/auth/signup")
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
+        webbrowser.open(f"{url.rstrip('/')}/auth/signup/")
 
     def _logout(self, sender) -> None:
         """Log out and clear stored tokens."""

@@ -109,6 +109,12 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 ; Option to launch the app after installation
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+; Register braindock:// URL scheme for auth callback from website
+Root: HKCU; Subkey: "Software\Classes\braindock"; ValueType: string; ValueData: "URL:BrainDock Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\braindock"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\braindock\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
+
 [UninstallDelete]
 ; Clean up any files created during runtime (user data is stored elsewhere)
 Type: filesandordirs; Name: "{app}\__pycache__"

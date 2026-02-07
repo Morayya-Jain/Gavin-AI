@@ -296,7 +296,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 # Web dashboard URL (opened by "Open Dashboard" menu item)
-DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://braindock.com")
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://thebraindock.com")
 
 # Licensing Configuration (offline fallback — Supabase is the primary source)
 LICENSE_FILE = USER_DATA_DIR / "license.json"  # User's license (persists)

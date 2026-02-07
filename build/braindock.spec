@@ -265,5 +265,10 @@ if IS_MACOS:
             'NSScreenCaptureUsageDescription': 'BrainDock can optionally capture screenshots to detect distracting websites and apps (disabled by default).',
             'NSAppleEventsUsageDescription': 'BrainDock uses AppleScript to detect the active window and browser URL for distraction monitoring.',
             'LSApplicationCategoryType': 'public.app-category.productivity',
+            # Deep link: braindock:// for auth callback from website
+            'CFBundleURLTypes': [{
+                'CFBundleURLName': 'com.braindock.app',
+                'CFBundleURLSchemes': ['braindock'],
+            }],
         },
     )

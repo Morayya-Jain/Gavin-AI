@@ -128,7 +128,7 @@ class _AuthCallbackHandler(BaseHTTPRequestHandler):
         logger.debug(f"Auth server: {format % args}")
 
 
-def run_auth_callback_server(website_url: str = "https://braindock.com") -> Optional[Dict]:
+def run_auth_callback_server(website_url: str = "https://thebraindock.com") -> Optional[Dict]:
     """
     Run the local auth callback server and open the browser.
 
