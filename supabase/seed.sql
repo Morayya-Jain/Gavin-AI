@@ -1,0 +1,2 @@
+-- Optional seed data (starter tier is in migration 20250207000001_initial_schema.sql)
+-- Add any extra dev seed data here.
