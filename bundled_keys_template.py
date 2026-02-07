@@ -14,6 +14,10 @@ At runtime, config.py imports this module to get the embedded keys.
 OPENAI_API_KEY = "%%OPENAI_API_KEY%%"
 GEMINI_API_KEY = "%%GEMINI_API_KEY%%"
 
+# Supabase (auth, sync, session upload) - replaced at build time
+SUPABASE_URL = "%%SUPABASE_URL%%"
+SUPABASE_ANON_KEY = "%%SUPABASE_ANON_KEY%%"
+
 # Stripe Payment Keys - replaced at build time
 STRIPE_SECRET_KEY = "%%STRIPE_SECRET_KEY%%"
 STRIPE_PUBLISHABLE_KEY = "%%STRIPE_PUBLISHABLE_KEY%%"

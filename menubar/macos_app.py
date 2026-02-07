@@ -96,6 +96,7 @@ class BrainDockMenuBar(rumps.App):
         self.account_item.set_callback(None)
         self.login_item = rumps.MenuItem("Log In", callback=self._login)
         self.signup_item = rumps.MenuItem("Sign Up", callback=self._signup)
+        self.paste_code_item = rumps.MenuItem("Paste Login Code", callback=self._paste_code)
         self.logout_item = rumps.MenuItem("Log Out", callback=self._logout)
         self.quit_item = rumps.MenuItem("Quit BrainDock", callback=self._quit_app)
 
@@ -182,6 +183,7 @@ class BrainDockMenuBar(rumps.App):
         self.menu.add(rumps.separator)
         self.menu.add(self.login_item)
         self.menu.add(self.signup_item)
+        self.menu.add(self.paste_code_item)
         self.menu.add(rumps.separator)
         self.menu.add(self.quit_item)
 
@@ -357,9 +359,42 @@ class BrainDockMenuBar(rumps.App):
             rumps.alert(title="Login Failed", message="Could not complete login. Please try again.")
 
     def _signup(self, sender) -> None:
-        """Open signup page in browser."""
+        """Open signup page in browser (with source=desktop when bundled)."""
         url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
-        webbrowser.open(f"{url.rstrip('/')}/auth/signup/")
+        base = url.rstrip("/")
+        if config.is_bundled():
+            webbrowser.open(f"{base}/auth/signup/?source=desktop")
+        else:
+            webbrowser.open(f"{base}/auth/signup/")
+
+    def _paste_code(self, sender) -> None:
+        """Manually enter a login code (fallback when deep link doesn't work)."""
+        response = rumps.Window(
+            title="Paste Login Code",
+            message="Enter the code shown on the website after logging in:",
+            default_text="",
+            ok="Submit",
+            cancel="Cancel",
+            dimensions=(260, 25),
+        ).run()
+        if not response.clicked or not response.text.strip():
+            return
+        code = response.text.strip()
+        result = self.sync.exchange_linking_code(code)
+        if result.get("success"):
+            self._build_menu()
+            self._apply_cloud_settings()
+            self.engine.prewarm_camera()
+            rumps.notification(
+                title="BrainDock",
+                subtitle="",
+                message="You're now logged in!",
+            )
+        else:
+            rumps.alert(
+                title="Login Failed",
+                message=result.get("error", "Invalid or expired code. Please try again."),
+            )
 
     def _logout(self, sender) -> None:
         """Log out and clear stored tokens."""

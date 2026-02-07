@@ -8,6 +8,8 @@
 #   1. Set these GitHub Secrets (Settings > Secrets > Actions):
 #      - GEMINI_API_KEY (required)
 #      - OPENAI_API_KEY (optional, for fallback/alternative AI)
+#      - SUPABASE_URL (required, for auth and sync)
+#      - SUPABASE_ANON_KEY (required, for auth and sync)
 #      - STRIPE_SECRET_KEY (optional, for payments)
 #      - STRIPE_PUBLISHABLE_KEY (optional, for payments)
 #      - STRIPE_PRICE_ID (optional, for payments)
@@ -104,6 +106,8 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_PRICE_ID: ${{ secrets.STRIPE_PRICE_ID }}
@@ -123,6 +127,8 @@ jobs:
           keys = {
               'OPENAI_API_KEY': get_clean_key('OPENAI_API_KEY'),
               'GEMINI_API_KEY': get_clean_key('GEMINI_API_KEY'),
+              'SUPABASE_URL': get_clean_key('SUPABASE_URL'),
+              'SUPABASE_ANON_KEY': get_clean_key('SUPABASE_ANON_KEY'),
               'STRIPE_SECRET_KEY': get_clean_key('STRIPE_SECRET_KEY'),
               'STRIPE_PUBLISHABLE_KEY': get_clean_key('STRIPE_PUBLISHABLE_KEY'),
               'STRIPE_PRICE_ID': get_clean_key('STRIPE_PRICE_ID'),
@@ -490,6 +496,8 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_PRICE_ID: ${{ secrets.STRIPE_PRICE_ID }}
@@ -509,6 +517,8 @@ jobs:
           keys = {
               'OPENAI_API_KEY': get_clean_key('OPENAI_API_KEY'),
               'GEMINI_API_KEY': get_clean_key('GEMINI_API_KEY'),
+              'SUPABASE_URL': get_clean_key('SUPABASE_URL'),
+              'SUPABASE_ANON_KEY': get_clean_key('SUPABASE_ANON_KEY'),
               'STRIPE_SECRET_KEY': get_clean_key('STRIPE_SECRET_KEY'),
               'STRIPE_PUBLISHABLE_KEY': get_clean_key('STRIPE_PUBLISHABLE_KEY'),
               'STRIPE_PRICE_ID': get_clean_key('STRIPE_PRICE_ID'),

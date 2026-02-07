@@ -292,8 +292,14 @@ MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")  # Password to unlock
 USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
 
 # Supabase Configuration (auth, settings sync, session upload)
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+# Priority: 1) Environment variable, 2) Bundled key, 3) Empty string
+_BUNDLED_SUPABASE_URL = ""
+_BUNDLED_SUPABASE_ANON_KEY = ""
+if _bundled_keys_available:
+    _BUNDLED_SUPABASE_URL = bundled_keys.get_key("SUPABASE_URL")
+    _BUNDLED_SUPABASE_ANON_KEY = bundled_keys.get_key("SUPABASE_ANON_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "") or _BUNDLED_SUPABASE_URL
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "") or _BUNDLED_SUPABASE_ANON_KEY
 
 # Web dashboard URL (opened by "Open Dashboard" menu item)
 DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://thebraindock.com")

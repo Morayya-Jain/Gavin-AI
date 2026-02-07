@@ -135,6 +135,8 @@ if [[ -f "$BUNDLED_KEYS_TEMPLATE" ]]; then
     # We use | as delimiter since keys might contain /
     sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$BUNDLED_KEYS"
     sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%SUPABASE_URL%%|${SUPABASE_URL:-}|g" "$BUNDLED_KEYS"
+    sed -i '' "s|%%SUPABASE_ANON_KEY%%|${SUPABASE_ANON_KEY:-}|g" "$BUNDLED_KEYS"
     # Stripe keys removed — payments handled via web dashboard
     
     echo -e "${GREEN}bundled_keys.py generated with embedded keys.${NC}"

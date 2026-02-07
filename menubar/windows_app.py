@@ -100,6 +100,7 @@ class BrainDockTray:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Log In", self._login),
             pystray.MenuItem("Sign Up", self._signup),
+            pystray.MenuItem("Paste Login Code", self._paste_code),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit BrainDock", self._quit_app),
         )
@@ -300,9 +301,41 @@ class BrainDockTray:
             self.icon.notify("Login failed. Please try again.", "BrainDock Error")
 
     def _signup(self, icon, item) -> None:
-        """Open signup page in browser."""
+        """Open signup page in browser (with source=desktop when bundled)."""
         url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com")
-        webbrowser.open(f"{url.rstrip('/')}/auth/signup/")
+        base = url.rstrip("/")
+        if config.is_bundled():
+            webbrowser.open(f"{base}/auth/signup/?source=desktop")
+        else:
+            webbrowser.open(f"{base}/auth/signup/")
+
+    def _paste_code(self, icon, item) -> None:
+        """Manually enter a login code (fallback when deep link doesn't work)."""
+        import tkinter as tk
+        from tkinter import simpledialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        code = simpledialog.askstring(
+            "Paste Login Code",
+            "Enter the code shown on the website after logging in:",
+            parent=root,
+        )
+        root.destroy()
+        if not code or not code.strip():
+            return
+        result = self.sync.exchange_linking_code(code.strip())
+        if result.get("success"):
+            self._rebuild_menu()
+            self._apply_cloud_settings()
+            self.engine.prewarm_camera()
+            self.icon.notify("You're now logged in!", "BrainDock")
+        else:
+            self.icon.notify(
+                result.get("error", "Invalid or expired code. Please try again."),
+                "BrainDock — Login Failed",
+            )
 
     def _logout(self, icon, item) -> None:
         """Log out and clear stored tokens."""
