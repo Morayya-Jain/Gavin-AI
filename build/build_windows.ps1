@@ -10,9 +10,7 @@
 #
 # Usage:
 #   $env:GEMINI_API_KEY="your-key"
-#   $env:STRIPE_SECRET_KEY="your-key"
-#   $env:STRIPE_PUBLISHABLE_KEY="your-key"
-#   $env:STRIPE_PRICE_ID="your-id"
+#   (Stripe keys no longer needed — payments handled via web dashboard)
 #   .\build\build_windows.ps1
 #
 # For code-signed builds (optional):
@@ -52,7 +50,7 @@ try {
 if (-not $env:GEMINI_API_KEY) {
     Write-Host "Error: GEMINI_API_KEY environment variable is required." -ForegroundColor Red
     Write-Host ""
-    Write-Host 'Usage: $env:GEMINI_API_KEY="key"; $env:STRIPE_SECRET_KEY="key"; .\build\build_windows.ps1'
+    Write-Host 'Usage: $env:GEMINI_API_KEY="key"; .\build\build_windows.ps1'
     exit 1
 }
 
@@ -66,8 +64,8 @@ if ($env:OPENAI_API_KEY) {
     Write-Host "Note: OpenAI API key not provided (optional - Gemini is primary)." -ForegroundColor Yellow
 }
 
-# Check Stripe keys (optional but recommended)
-if ($env:STRIPE_SECRET_KEY) {
+# Stripe keys no longer needed — payments handled via web dashboard
+if ($false) {
     Write-Host "Stripe keys detected - will be embedded in build." -ForegroundColor Green
 } else {
     Write-Host "Warning: Stripe keys not provided. Payment features will be disabled." -ForegroundColor Yellow
@@ -159,9 +157,7 @@ if (Test-Path $BundledKeysTemplate) {
     # Replace placeholders with actual values (handle special regex characters)
     $content = $content -replace '%%OPENAI_API_KEY%%', ($env:OPENAI_API_KEY -replace '\$', '$$$$')
     $content = $content -replace '%%GEMINI_API_KEY%%', ($env:GEMINI_API_KEY -replace '\$', '$$$$')
-    $content = $content -replace '%%STRIPE_SECRET_KEY%%', ($env:STRIPE_SECRET_KEY -replace '\$', '$$$$')
-    $content = $content -replace '%%STRIPE_PUBLISHABLE_KEY%%', ($env:STRIPE_PUBLISHABLE_KEY -replace '\$', '$$$$')
-    $content = $content -replace '%%STRIPE_PRICE_ID%%', ($env:STRIPE_PRICE_ID -replace '\$', '$$$$')
+    # Stripe keys removed — payments handled via web dashboard
     
     # Write bundled_keys.py (UTF-8 without BOM for Python compatibility)
     [System.IO.File]::WriteAllText($BundledKeys, $content, [System.Text.UTF8Encoding]::new($false))

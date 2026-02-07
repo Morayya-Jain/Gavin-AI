@@ -54,45 +54,6 @@ else:
 # Note: SSL certificates are handled automatically by PyInstaller's certifi hook
 # (hook-certifi.py from pyinstaller-hooks-contrib)
 
-# Add Stripe's certificate bundle (required for httpx SSL connections)
-try:
-    import stripe
-    stripe_data_path = os.path.join(os.path.dirname(stripe.__file__), 'data')
-    if os.path.exists(stripe_data_path):
-        datas.append((stripe_data_path, 'stripe/data'))
-except ImportError:
-    pass
-
-# CustomTkinter assets - required for proper widget rendering in bundled apps
-# Without this, CTkScrollableFrame and other widgets have viewport/layout issues
-# that cause content to be invisible or incorrectly positioned
-try:
-    ctk_datas = collect_data_files('customtkinter')
-    if ctk_datas:
-        print(f"INFO: Collected {len(ctk_datas)} customtkinter data files")
-        datas += ctk_datas
-    else:
-        print("WARNING: collect_data_files returned empty for customtkinter")
-        # Fallback: manually find customtkinter assets
-        import customtkinter
-        ctk_path = Path(customtkinter.__file__).parent
-        ctk_assets = ctk_path / 'assets'
-        if ctk_assets.exists():
-            print(f"INFO: Manually adding customtkinter assets from {ctk_assets}")
-            datas.append((str(ctk_assets), 'customtkinter/assets'))
-except Exception as e:
-    print(f"WARNING: Could not collect customtkinter assets: {e}")
-    # Fallback: try to find customtkinter manually
-    try:
-        import customtkinter
-        ctk_path = Path(customtkinter.__file__).parent
-        ctk_assets = ctk_path / 'assets'
-        if ctk_assets.exists():
-            print(f"INFO: Fallback - adding customtkinter assets from {ctk_assets}")
-            datas.append((str(ctk_assets), 'customtkinter/assets'))
-    except Exception as e2:
-        print(f"ERROR: Could not find customtkinter assets: {e2} - UI may have rendering issues")
-
 # Windows-only: Bundle timezone data (tzdata package)
 # On Windows, Python uses tzdata for timezone info since the OS doesn't have
 # built-in IANA timezone data like macOS/Linux. Without bundling this,
@@ -120,85 +81,23 @@ if IS_WINDOWS:
     if icon_ico_path.exists():
         datas.append((str(icon_ico_path), 'assets'))
 
-# Explicitly collect tkinter binaries - required for consistent bundling
-# across different Python installation methods (pyenv, official installer, Homebrew)
-# Without this, GitHub Actions builds may place tkinter in unexpected locations
+# No tkinter binary bundling needed — menu bar apps don't use tkinter
 binaries = []
-if IS_MACOS:
-    import sysconfig
-    import glob
-
-    # Find _tkinter shared library
-    stdlib_path = sysconfig.get_path('stdlib')
-    libdynload_path = sysconfig.get_path('platlib')
-
-    # Try multiple locations where _tkinter might be
-    # Covers: official Python installer, pyenv, Homebrew (Intel & Apple Silicon)
-    tkinter_locations = [
-        # Dynamic paths based on current Python installation
-        os.path.join(sysconfig.get_config_var('LIBDIR') or '', 'python*', 'lib-dynload', '_tkinter*.so'),
-        os.path.join(stdlib_path or '', '..', 'lib-dynload', '_tkinter*.so'),
-        os.path.join(sys.prefix, 'lib', 'python*', 'lib-dynload', '_tkinter*.so'),
-        # Official Python.org installer
-        '/Library/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        # pyenv installations
-        os.path.expanduser('~/.pyenv/versions/*/lib/python*/lib-dynload/_tkinter*.so'),
-        # Homebrew Python - Apple Silicon (M1/M2/M3)
-        '/opt/homebrew/Cellar/python@*/*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        '/opt/homebrew/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        '/opt/homebrew/opt/python@*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        # Homebrew Python - Intel Macs
-        '/usr/local/Cellar/python@*/*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        '/usr/local/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-        '/usr/local/opt/python@*/Frameworks/Python.framework/Versions/*/lib/python*/lib-dynload/_tkinter*.so',
-    ]
-
-    tkinter_found = False
-    for pattern in tkinter_locations:
-        matches = glob.glob(pattern)
-        for match in matches:
-            if os.path.exists(match):
-                print(f"INFO: Found _tkinter at: {match}")
-                # Bundle to the root Frameworks directory for consistent access
-                binaries.append((match, '.'))
-                tkinter_found = True
-                break
-        if tkinter_found:
-            break
-
-    if not tkinter_found:
-        print("WARNING: Could not find _tkinter.so - tkinter may not work in bundled app")
-
-    # Also ensure Tcl/Tk libraries are properly bundled
-    # Look for Tcl and Tk frameworks/libraries across all installation methods
-    tcltk_locations = [
-        # System/Official installer frameworks
-        '/Library/Frameworks/Tcl.framework',
-        '/Library/Frameworks/Tk.framework',
-        # Homebrew tcl-tk - Intel Macs
-        '/usr/local/opt/tcl-tk/lib',
-        '/usr/local/opt/tcl-tk/lib/libtcl*.dylib',
-        '/usr/local/opt/tcl-tk/lib/libtk*.dylib',
-        # Homebrew tcl-tk - Apple Silicon
-        '/opt/homebrew/opt/tcl-tk/lib',
-        '/opt/homebrew/opt/tcl-tk/lib/libtcl*.dylib',
-        '/opt/homebrew/opt/tcl-tk/lib/libtk*.dylib',
-        # pyenv installations
-        os.path.expanduser('~/.pyenv/versions/*/lib/libtcl*.dylib'),
-        os.path.expanduser('~/.pyenv/versions/*/lib/libtk*.dylib'),
-    ]
-    for pattern in tcltk_locations:
-        matches = glob.glob(pattern)
-        for match in matches:
-            if os.path.exists(match) and os.path.isfile(match):
-                print(f"INFO: Found Tcl/Tk library at: {match}")
-                binaries.append((match, '.'))
 
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [
     # Bundled API keys module (generated at build time)
     'bundled_keys',
-    
+
+    # Core/menubar/sync packages
+    'core',
+    'core.engine',
+    'core.permissions',
+    'menubar',
+    'sync',
+    'sync.supabase_client',
+    'sync.auth_server',
+
     # OpenAI and HTTP clients
     'openai',
     'openai.resources',
@@ -211,7 +110,7 @@ hiddenimports = [
     'certifi',
     'httpx._transports',
     'httpx._transports.default',
-    
+
     # Google Generative AI
     'google.generativeai',
     'google.ai.generativelanguage',
@@ -219,14 +118,16 @@ hiddenimports = [
     'google.auth',
     'google.protobuf',
     'proto',
-    
+
+    # Supabase
+    'supabase',
+
     # Image processing
     'PIL',
     'PIL.Image',
-    'PIL.ImageTk',
     'cv2',
     'numpy',
-    
+
     # PDF generation
     'reportlab',
     'reportlab.lib',
@@ -236,43 +137,38 @@ hiddenimports = [
     'reportlab.lib.units',
     'reportlab.platypus',
     'reportlab.graphics',
-    
-    # Stripe
-    'stripe',
-    
+
     # Environment
     'dotenv',
-    
+
     # Standard library that might be missed
     'json',
     'logging',
     'threading',
     'queue',
-    'tkinter',
-    'tkinter.messagebox',
-    'tkinter.filedialog',
-    'tkinter.font',
 ]
 
 # Platform-specific hidden imports
 if IS_MACOS:
     hiddenimports.extend([
+        'rumps',
         'AppKit',
         'Foundation',
-        'AVFoundation',  # For camera permission handling
+        'AVFoundation',
         'objc',
         'PyObjCTools',
     ])
 
 if IS_WINDOWS:
     hiddenimports.extend([
+        'pystray',
+        'pystray._win32',
         'pywinauto',
         'pywinauto.application',
         'pywinauto.controls',
         'pywinauto.controls.uia_controls',
         'comtypes',
         'comtypes.client',
-        # Timezone support - Windows lacks built-in IANA timezone data
         'tzdata',
         'zoneinfo',
     ])
@@ -353,23 +249,20 @@ if IS_MACOS:
         info_plist={
             'CFBundleName': 'BrainDock',
             'CFBundleDisplayName': 'BrainDock',
-            'CFBundleVersion': '1.0.0',
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleVersion': '2.0.0',
+            'CFBundleShortVersionString': '2.0.0',
             'CFBundleExecutable': 'BrainDock',
             'CFBundleIdentifier': 'com.braindock.app',
             'CFBundlePackageType': 'APPL',
-            'CFBundleSignature': 'BDCK',  # BrainDock 4-char bundle signature
-            # Minimum macOS 10.15 (Catalina) required for Screen Recording permission
-            # and modern AVFoundation camera permission APIs
+            'CFBundleSignature': 'BDCK',
             'LSMinimumSystemVersion': '10.15.0',
             'NSHighResolutionCapable': True,
+            # Menu bar agent — no Dock icon, no main window
+            'LSUIElement': True,
             # Camera access for focus detection
             'NSCameraUsageDescription': 'BrainDock needs camera access to monitor your focus and detect distractions.',
-            # Microphone (reserved for future features)
             'NSMicrophoneUsageDescription': 'BrainDock may use the microphone for future features.',
-            # Screen Recording for optional AI screenshot analysis
             'NSScreenCaptureUsageDescription': 'BrainDock can optionally capture screenshots to detect distracting websites and apps (disabled by default).',
-            # AppleEvents for detecting active window title and browser URLs
             'NSAppleEventsUsageDescription': 'BrainDock uses AppleScript to detect the active window and browser URL for distraction monitoring.',
             'LSApplicationCategoryType': 'public.app-category.productivity',
         },

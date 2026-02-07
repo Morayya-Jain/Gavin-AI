@@ -103,7 +103,7 @@ fi
 if [[ -z "$GEMINI_API_KEY" ]]; then
     echo -e "${RED}Error: GEMINI_API_KEY environment variable is required.${NC}"
     echo ""
-    echo "Usage: GEMINI_API_KEY=key [OPENAI_API_KEY=key] STRIPE_SECRET_KEY=key STRIPE_PUBLISHABLE_KEY=key STRIPE_PRICE_ID=id ./build/build_macos.sh"
+    echo "Usage: GEMINI_API_KEY=key [OPENAI_API_KEY=key] ./build/build_macos.sh"
     exit 1
 fi
 
@@ -117,12 +117,7 @@ else
     echo -e "${YELLOW}Note: OpenAI API key not provided (optional - Gemini is primary).${NC}"
 fi
 
-# Set bundled Stripe keys (optional but recommended)
-if [[ -n "$STRIPE_SECRET_KEY" ]]; then
-    echo -e "${GREEN}Stripe keys detected - will be embedded in build.${NC}"
-else
-    echo -e "${YELLOW}Warning: Stripe keys not provided. Payment features will be disabled.${NC}"
-fi
+# Stripe keys no longer needed — payments handled via web dashboard
 
 # Generate bundled_keys.py with embedded API keys
 # This module is imported by config.py to get the actual key values
@@ -140,9 +135,7 @@ if [[ -f "$BUNDLED_KEYS_TEMPLATE" ]]; then
     # We use | as delimiter since keys might contain /
     sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$BUNDLED_KEYS"
     sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$BUNDLED_KEYS"
-    sed -i '' "s|%%STRIPE_SECRET_KEY%%|${STRIPE_SECRET_KEY:-}|g" "$BUNDLED_KEYS"
-    sed -i '' "s|%%STRIPE_PUBLISHABLE_KEY%%|${STRIPE_PUBLISHABLE_KEY:-}|g" "$BUNDLED_KEYS"
-    sed -i '' "s|%%STRIPE_PRICE_ID%%|${STRIPE_PRICE_ID:-}|g" "$BUNDLED_KEYS"
+    # Stripe keys removed — payments handled via web dashboard
     
     echo -e "${GREEN}bundled_keys.py generated with embedded keys.${NC}"
 else
@@ -312,7 +305,7 @@ if [[ -d "$PROJECT_ROOT/dist/BrainDock.app" ]]; then
     echo -e "${YELLOW}Creating DMG installer...${NC}"
     
     # Version for filename
-    VERSION="1.0.0"
+    VERSION="2.0.0"
     DMG_NAME="BrainDock-${VERSION}-macOS.dmg"
     DMG_PATH="$PROJECT_ROOT/dist/$DMG_NAME"
     
