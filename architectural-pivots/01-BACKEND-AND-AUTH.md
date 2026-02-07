@@ -391,7 +391,9 @@ CREATE POLICY "Users can update own profile" ON public.profiles
 CREATE POLICY "Users can read own subscription" ON public.subscriptions
     FOR SELECT USING (auth.uid() = user_id);
 
--- Subscription tiers: Anyone authenticated can read (public pricing info)
+-- Subscription tiers: Readable by all roles (pricing is public info)
+-- This intentionally allows both anon and authenticated access.
+-- If you want to restrict to authenticated users only, add: TO authenticated
 CREATE POLICY "Anyone can read active tiers" ON public.subscription_tiers
     FOR SELECT USING (is_active = TRUE);
 
@@ -514,16 +516,42 @@ CREATE TABLE public.linking_codes (
 ALTER TABLE public.linking_codes ENABLE ROW LEVEL SECURITY;
 -- No SELECT/INSERT policies for anon/authenticated roles (intentional)
 -- Only the service role key (Edge Functions) can read/write this table
+
+-- Cleanup: Delete expired or used codes older than 1 hour
+-- Run this periodically (manually, or via pg_cron if on Supabase Pro)
+CREATE OR REPLACE FUNCTION public.cleanup_expired_linking_codes()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM public.linking_codes
+    WHERE used = TRUE
+       OR expires_at < NOW() - INTERVAL '1 hour';
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- To run manually: SELECT public.cleanup_expired_linking_codes();
+-- To schedule on Supabase Pro (pg_cron): 
+--   SELECT cron.schedule('cleanup-linking-codes', '0 * * * *', 'SELECT public.cleanup_expired_linking_codes()');
 ```
 
 **Edge Function: Generate linking code** (called by the website after login with `?source=desktop`):
 
+> **Note:** This function is called from the website (browser), so it needs CORS headers to handle preflight requests. It also requires a valid Supabase JWT — deploy WITHOUT `--no-verify-jwt`.
+
 ```typescript
 // supabase/functions/generate-linking-code/index.ts
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-serve(async (req) => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight (browsers send OPTIONS before POST)
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   const { access_token, refresh_token } = await req.json();
   
   // Verify the token is valid
@@ -533,7 +561,10 @@ serve(async (req) => {
   );
   const { data: { user }, error } = await userClient.auth.getUser(access_token);
   if (error || !user) {
-    return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
+    return new Response(JSON.stringify({ error: "Invalid token" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
   
   // Generate a short, human-friendly code
@@ -560,19 +591,30 @@ serve(async (req) => {
   
   return new Response(JSON.stringify({ code }), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
 ```
 
 **Edge Function: Exchange linking code** (called by the desktop app):
 
+> **Note:** This function is called by the desktop app which has NO auth token yet (that's what it's trying to get). Deploy with `--no-verify-jwt`. CORS headers included for consistency, though the Python desktop client doesn't require them.
+
 ```typescript
 // supabase/functions/exchange-linking-code/index.ts
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-serve(async (req) => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   const { code } = await req.json();
   
   const adminClient = createClient(
@@ -592,7 +634,7 @@ serve(async (req) => {
   if (error || !data) {
     return new Response(
       JSON.stringify({ error: "Invalid or expired code" }),
-      { status: 400 }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
   
@@ -607,15 +649,18 @@ serve(async (req) => {
     refresh_token: data.refresh_token,
   }), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
 ```
 
 Deploy both:
 ```bash
+# generate-linking-code: called by authenticated website users (JWT verified by Supabase)
 supabase functions deploy generate-linking-code
-supabase functions deploy exchange-linking-code
+
+# exchange-linking-code: called by desktop app with NO token yet — must skip JWT verification
+supabase functions deploy exchange-linking-code --no-verify-jwt
 ```
 
 ---
@@ -628,15 +673,16 @@ This Edge Function receives Stripe webhook events and updates the `subscriptions
 
 **Create:** `supabase/functions/stripe-webhook/index.ts`
 
+> **Note:** This function is called server-to-server by Stripe (no browser, no Supabase JWT). Deploy with `--no-verify-jwt`. No CORS headers needed.
+
 ```typescript
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14?target=deno";
 
 const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, { apiVersion: "2023-10-16" });
 const endpointSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET")!;
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const signature = req.headers.get("stripe-signature")!;
   const body = await req.text();
 
@@ -714,22 +760,34 @@ If you want a server-side endpoint for session upload instead of direct client w
 ### Deploying Edge Functions
 
 ```bash
-# Install Supabase CLI
-npm install -g supabase
+# Install Supabase CLI (macOS — use npm on other platforms: npm install -g supabase)
+brew install supabase/tap/supabase
 
 # Login
 supabase login
 
+# Initialize Supabase in the repo (creates supabase/ directory)
+supabase init
+
 # Link to your project
 supabase link --project-ref <your-project-id>
 
-# Set secrets
+# Set secrets (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are auto-available)
 supabase secrets set STRIPE_SECRET_KEY=sk_live_...
 supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
 
-# Deploy
-supabase functions deploy stripe-webhook
+# Deploy all three functions
+# stripe-webhook: Stripe calls this server-to-server (no Supabase JWT)
+supabase functions deploy stripe-webhook --no-verify-jwt
+
+# generate-linking-code: called by authenticated website users (JWT verified)
+supabase functions deploy generate-linking-code
+
+# exchange-linking-code: desktop app has no token yet (that's what it's getting)
+supabase functions deploy exchange-linking-code --no-verify-jwt
 ```
+
+> **Why `--no-verify-jwt`?** By default, Supabase Edge Functions reject requests without a valid Supabase JWT in the `Authorization` header. `stripe-webhook` is called by Stripe (no JWT), and `exchange-linking-code` is called by the desktop app before it has a token. `generate-linking-code` is called by an already-authenticated website user, so it keeps JWT verification enabled.
 
 ### Configure Stripe Webhook
 
