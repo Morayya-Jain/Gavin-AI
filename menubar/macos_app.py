@@ -335,7 +335,7 @@ class BrainDockMenuBar(rumps.App):
         base = url.rstrip("/")
         if config.is_bundled():
             # Bundled app: open site; website redirects to braindock://callback?code=...
-            webbrowser.open(f"{base}/auth/login?source=desktop")
+            webbrowser.open(f"{base}/auth/login/?source=desktop")
             rumps.notification(
                 title="BrainDock",
                 subtitle="",

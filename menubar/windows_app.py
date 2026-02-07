@@ -286,7 +286,7 @@ class BrainDockTray:
         base = url.rstrip("/")
         if config.is_bundled():
             # Bundled app: open site; website redirects to braindock://callback?code=...
-            webbrowser.open(f"{base}/auth/login?source=desktop")
+            webbrowser.open(f"{base}/auth/login/?source=desktop")
             self.icon.notify("Complete login in the browser; the app will update when done.", "BrainDock")
             return
         # Development: localhost callback server
