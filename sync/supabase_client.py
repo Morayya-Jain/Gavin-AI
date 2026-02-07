@@ -121,7 +121,7 @@ class BrainDockSync:
 
     def is_available(self) -> bool:
         """Check if the sync client is configured and ready."""
-        return self._client is not None
+        return self._client is not None and bool(self._url) and bool(self._key)
 
     def is_authenticated(self) -> bool:
         """
