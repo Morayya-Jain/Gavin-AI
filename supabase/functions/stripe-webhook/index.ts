@@ -1,5 +1,5 @@
 /**
- * Stripe webhook handler — updates subscriptions table on checkout.session.completed.
+ * Stripe webhook handler — credits system + legacy subscriptions.
  * Called server-to-server by Stripe. Deploy with --no-verify-jwt.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -29,23 +29,39 @@ Deno.serve(async (req) => {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      const email =
-        session.customer_email || session.customer_details?.email;
 
-      if (!email) break;
+      // Resolve user: prefer metadata.user_id (set by checkout function),
+      // fall back to client_reference_id, then email lookup
+      let userId: string | null = session.metadata?.user_id ?? null;
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", email)
-        .single();
+      if (!userId && session.client_reference_id) {
+        userId = session.client_reference_id;
+      }
 
-      if (!profile) break;
+      if (!userId) {
+        const email = session.customer_email || session.customer_details?.email;
+        if (!email) break;
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("email", email)
+          .single();
+        if (!profile) break;
+        userId = profile.id;
+      }
 
       const packageId = session.metadata?.package_id;
 
       if (packageId) {
-        // Credit pack purchase: add hours to user_credits and log in credit_purchases
+        // Idempotency: skip if this Stripe session was already processed
+        const { data: existingPurchase } = await supabase
+          .from("credit_purchases")
+          .select("id")
+          .eq("stripe_session_id", session.id)
+          .maybeSingle();
+
+        if (existingPurchase) break; // Already processed, skip
+
         const { data: pkg, error: pkgErr } = await supabase
           .from("credit_packages")
           .select("id, name, hours, price_cents")
@@ -55,30 +71,30 @@ Deno.serve(async (req) => {
 
         if (!pkgErr && pkg) {
           const secondsToAdd = pkg.hours * 3600;
+
+          // Atomic increment (avoids read-then-write race condition)
           const { data: existing } = await supabase
             .from("user_credits")
-            .select("id, total_purchased_seconds")
-            .eq("user_id", profile.id)
-            .single();
+            .select("id")
+            .eq("user_id", userId)
+            .maybeSingle();
 
           if (existing) {
-            await supabase
-              .from("user_credits")
-              .update({
-                total_purchased_seconds: existing.total_purchased_seconds + secondsToAdd,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("user_id", profile.id);
+            await supabase.rpc("add_purchased_seconds", {
+              p_user_id: userId,
+              p_seconds: secondsToAdd,
+            });
           } else {
             await supabase.from("user_credits").insert({
-              user_id: profile.id,
+              user_id: userId,
               total_purchased_seconds: secondsToAdd,
               total_used_seconds: 0,
             });
           }
 
+          // Log the purchase
           await supabase.from("credit_purchases").insert({
-            user_id: profile.id,
+            user_id: userId,
             package_id: pkg.id,
             stripe_session_id: session.id,
             stripe_payment_intent: session.payment_intent as string,
@@ -87,7 +103,7 @@ Deno.serve(async (req) => {
           });
         }
       } else {
-        // Legacy tier purchase: update subscriptions (backward compatibility)
+        // Legacy tier purchase (backward compatibility)
         const { data: tier } = await supabase
           .from("subscription_tiers")
           .select("id")
@@ -96,7 +112,7 @@ Deno.serve(async (req) => {
 
         await supabase.from("subscriptions").upsert(
           {
-            user_id: profile.id,
+            user_id: userId,
             tier_id: tier?.id,
             stripe_customer_id: session.customer as string,
             stripe_session_id: session.id,

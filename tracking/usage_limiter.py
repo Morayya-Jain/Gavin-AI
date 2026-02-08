@@ -248,12 +248,15 @@ class UsageLimiter:
         try:
             balance = self._sync_client.get_credit_balance()
             purchased = int(balance.get("total_purchased_seconds", 0))
-            used = int(balance.get("total_used_seconds", 0))
+            cloud_used = int(balance.get("total_used_seconds", 0))
             with self._lock:
+                # Cloud always wins for purchased (only webhook can increase it)
                 self.data["total_granted_seconds"] = purchased
-                self.data["total_used_seconds"] = used
+                # Take max to avoid losing locally-recorded-but-not-yet-synced usage
+                local_used = self.data.get("total_used_seconds", 0)
+                self.data["total_used_seconds"] = max(cloud_used, local_used)
                 self._save_data()
-            logger.debug(f"Synced credits from cloud: {purchased}s purchased, {used}s used")
+            logger.debug(f"Synced credits from cloud: {purchased}s purchased, {max(cloud_used, local_used)}s used")
             return True
         except Exception as e:
             logger.warning(f"Could not sync credits from cloud: {e}")

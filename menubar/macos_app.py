@@ -465,6 +465,10 @@ class BrainDockMenuBar(rumps.App):
             blocklist = BrainDockSync.cloud_settings_to_blocklist(settings)
             self.engine.set_blocklist(blocklist)
 
+            # Sync credit balance from cloud so menu shows fresh values
+            self.engine.usage_limiter.sync_with_cloud()
+            self._update_credits_display()
+
             logger.info("Cloud settings applied")
         except Exception as e:
             logger.warning(f"Could not apply cloud settings: {e}")

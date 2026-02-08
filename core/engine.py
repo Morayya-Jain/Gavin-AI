@@ -179,13 +179,12 @@ class SessionEngine:
         # Sync credits from cloud so we have latest balance (e.g. after buying hours on website)
         self.usage_limiter.sync_with_cloud()
 
+        # Clear locked state if credits are now available (user bought more hours)
+        if self.is_locked and not self.usage_limiter.is_time_exhausted():
+            self.is_locked = False
+            logger.info("Credits available after sync — cleared locked state")
+
         # Usage limit check (credits / hours remaining)
-        if self.is_locked:
-            return {
-                "success": False,
-                "error": "No hours remaining. Purchase more at thebraindock.com",
-                "error_type": "time_exhausted",
-            }
         if self.usage_limiter.is_time_exhausted():
             self.is_locked = True
             return {
@@ -443,7 +442,7 @@ class SessionEngine:
         return {
             "remaining_seconds": max(0, remaining),
             "is_exhausted": remaining <= 0,
-            "extensions_used": getattr(self.usage_limiter, "extensions_used", 0),
+            "extensions_used": 0,  # Deprecated: credits system replaced extensions
         }
 
     def get_last_report_path(self) -> Optional[Path]:
@@ -683,6 +682,9 @@ class SessionEngine:
                             self.alerts_played = 0
 
                     last_screen_check = current_time
+
+                    # Check for time exhaustion (screen-only sessions burn credits too)
+                    self._check_time_exhaustion()
 
                 time.sleep(0.1)
 
