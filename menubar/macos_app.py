@@ -109,6 +109,11 @@ class BrainDockMenuBar(rumps.App):
         # Build the menu based on auth state
         self._build_menu()
 
+        # Sync settings + credits from cloud on launch if already logged in
+        if self._is_logged_in():
+            self._apply_cloud_settings()
+            self.sync.register_device()
+
         # Register braindock:// URL handler (for deep link auth callback)
         self._register_url_handler()
 
@@ -250,11 +255,17 @@ class BrainDockMenuBar(rumps.App):
         except Exception:
             self.credits_item.title = "Credits: —"
 
+    _cloud_sync_counter: int = 0
+
     @rumps.timer(60)
     def _tick_credits(self, timer) -> None:
-        """Update credits display every 60 seconds when authenticated."""
+        """Update credits display every 60s; sync from cloud every 5 minutes."""
         if not self._is_logged_in():
             return
+        self._cloud_sync_counter += 1
+        if self._cloud_sync_counter >= 5:  # Every 5 minutes
+            self.engine.usage_limiter.sync_with_cloud()
+            self._cloud_sync_counter = 0
         self._update_credits_display()
 
     # ------------------------------------------------------------------

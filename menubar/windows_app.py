@@ -76,9 +76,15 @@ class BrainDockTray:
         # Timer thread for updating tooltip during sessions and checking pending deep link
         self._timer_running: bool = True
         self._timer_thread = threading.Thread(target=self._timer_loop, daemon=True)
+        self._cloud_sync_counter: int = 0  # Tracks 60s ticks for 5-minute cloud sync
 
         # Pending deep link file (when another instance received braindock:// and handed off)
         self._pending_deeplink_file: Path = config.USER_DATA_DIR / "pending_deeplink.txt"
+
+        # Sync settings + credits from cloud on launch if already logged in
+        if self._is_logged_in():
+            self._apply_cloud_settings()
+            self.sync.register_device()
 
     # ------------------------------------------------------------------
     # Menu building (auth-gated)
@@ -212,7 +218,8 @@ class BrainDockTray:
     # ------------------------------------------------------------------
 
     def _timer_loop(self) -> None:
-        """Background thread: update tray tooltip; check for pending deep link."""
+        """Background thread: update tray tooltip; check for pending deep link; periodic cloud sync."""
+        tick_count = 0
         while self._timer_running:
             if self.engine.is_running:
                 status = self.engine.get_status()
@@ -222,6 +229,13 @@ class BrainDockTray:
                 s = elapsed % 60
                 self.icon.title = f"BrainDock — {h:02d}:{m:02d}:{s:02d}"
             self._process_pending_deeplink()
+
+            # Sync credits from cloud every 5 minutes (300 ticks at 1s each)
+            tick_count += 1
+            if tick_count >= 300 and self._is_logged_in():
+                self.engine.usage_limiter.sync_with_cloud()
+                tick_count = 0
+
             time.sleep(1)
 
     # ------------------------------------------------------------------
@@ -386,6 +400,10 @@ class BrainDockTray:
 
             blocklist = BrainDockSync.cloud_settings_to_blocklist(settings)
             self.engine.set_blocklist(blocklist)
+
+            # Sync credit balance from cloud
+            self.engine.usage_limiter.sync_with_cloud()
+
             logger.info("Cloud settings applied")
         except Exception as e:
             logger.warning(f"Could not apply cloud settings: {e}")
