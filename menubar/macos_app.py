@@ -255,17 +255,12 @@ class BrainDockMenuBar(rumps.App):
         except Exception:
             self.credits_item.title = "Credits: —"
 
-    _cloud_sync_counter: int = 0
-
-    @rumps.timer(60)
+    @rumps.timer(30)
     def _tick_credits(self, timer) -> None:
-        """Update credits display every 60s; sync from cloud every 5 minutes."""
+        """Sync credits from cloud and update display every 30 seconds."""
         if not self._is_logged_in():
             return
-        self._cloud_sync_counter += 1
-        if self._cloud_sync_counter >= 5:  # Every 5 minutes
-            self.engine.usage_limiter.sync_with_cloud()
-            self._cloud_sync_counter = 0
+        self.engine.usage_limiter.sync_with_cloud()
         self._update_credits_display()
 
     # ------------------------------------------------------------------
