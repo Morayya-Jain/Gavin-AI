@@ -346,6 +346,60 @@ class BrainDockSync:
             return {"has_access": False, "tier": "unknown", "features": {}}
 
     # ------------------------------------------------------------------
+    # Credits (hour-based balance)
+    # ------------------------------------------------------------------
+
+    def get_credit_balance(self) -> Dict:
+        """
+        Fetch user's credit balance from user_credits (cloud source of truth).
+
+        Returns:
+            {"total_purchased_seconds": int, "total_used_seconds": int, "remaining_seconds": int}
+            or empty/zero dict on error or no row.
+        """
+        if not self._client:
+            return {"total_purchased_seconds": 0, "total_used_seconds": 0, "remaining_seconds": 0}
+        try:
+            result = (
+                self._client.table("user_credits")
+                .select("total_purchased_seconds, total_used_seconds")
+                .single()
+                .execute()
+            )
+            if not result.data:
+                return {"total_purchased_seconds": 0, "total_used_seconds": 0, "remaining_seconds": 0}
+            purchased = int(result.data.get("total_purchased_seconds", 0))
+            used = int(result.data.get("total_used_seconds", 0))
+            return {
+                "total_purchased_seconds": purchased,
+                "total_used_seconds": used,
+                "remaining_seconds": max(0, purchased - used),
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get credit balance: {e}")
+            return {"total_purchased_seconds": 0, "total_used_seconds": 0, "remaining_seconds": 0}
+
+    def record_usage(self, seconds: int) -> bool:
+        """
+        Record session usage by incrementing total_used_seconds in the cloud (RPC).
+
+        Args:
+            seconds: Active session duration in seconds to add.
+
+        Returns:
+            True if the RPC succeeded, False otherwise.
+        """
+        if not self._client or seconds <= 0:
+            return False
+        try:
+            self._client.rpc("record_session_usage", {"p_seconds": seconds}).execute()
+            logger.debug(f"Recorded {seconds}s usage to cloud")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to record usage to cloud: {e}")
+            return False
+
+    # ------------------------------------------------------------------
     # Settings sync
     # ------------------------------------------------------------------
 

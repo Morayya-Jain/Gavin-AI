@@ -59,8 +59,9 @@ class BrainDockMenuBar(rumps.App):
         self.engine.on_error = self._on_error
         self.engine.on_alert = self._on_alert
 
-        # Sync client
+        # Sync client (used for credits and session upload)
         self.sync = BrainDockSync()
+        self.engine.set_sync_client(self.sync)
 
         # --- Create all menu items (reused across rebuilds) ---
 
@@ -86,6 +87,11 @@ class BrainDockMenuBar(rumps.App):
         self.mode_camera.state = 1
         self.mode_menu = rumps.MenuItem("Mode")
         self.mode_menu.update([self.mode_camera, self.mode_screen, self.mode_both])
+
+        # Credits display (non-clickable; updated by timer)
+        self.credits_item = rumps.MenuItem("Credits: —")
+        self.credits_item.set_callback(None)
+        self.get_more_hours_item = rumps.MenuItem("Get More Hours", callback=self._open_pricing)
 
         # Utility items
         self.dashboard_item = rumps.MenuItem("Open Dashboard", callback=self._open_dashboard)
@@ -191,9 +197,12 @@ class BrainDockMenuBar(rumps.App):
         """Full menu for logged-in users."""
         email = self.sync.get_stored_email()
         self.account_item.title = email
+        self._update_credits_display()
 
         self.menu.add(self.status_item)
         self.menu.add(self.timer_item)
+        self.menu.add(self.credits_item)
+        self.menu.add(self.get_more_hours_item)
         self.menu.add(rumps.separator)
         self.menu.add(self.start_stop_item)
         self.menu.add(self.pause_item)
@@ -227,6 +236,27 @@ class BrainDockMenuBar(rumps.App):
             if self.timer_item.title:
                 self.timer_item.title = ""
 
+    def _update_credits_display(self) -> None:
+        """Refresh the credits menu item title from current remaining time."""
+        try:
+            tr = self.engine.check_time_remaining()
+            remaining = tr.get("remaining_seconds", 0)
+            h = remaining // 3600
+            m = (remaining % 3600) // 60
+            if h > 0:
+                self.credits_item.title = f"Credits: {h}h {m}m remaining"
+            else:
+                self.credits_item.title = f"Credits: {m}m remaining"
+        except Exception:
+            self.credits_item.title = "Credits: —"
+
+    @rumps.timer(60)
+    def _tick_credits(self, timer) -> None:
+        """Update credits display every 60 seconds when authenticated."""
+        if not self._is_logged_in():
+            return
+        self._update_credits_display()
+
     # ------------------------------------------------------------------
     # Session controls
     # ------------------------------------------------------------------
@@ -254,6 +284,7 @@ class BrainDockMenuBar(rumps.App):
         else:
             result = self.engine.stop_session()
             self._reset_to_idle()
+            self._update_credits_display()
 
             # Upload session data to cloud
             if result.get("session_data") and self.sync.is_available():
@@ -314,6 +345,11 @@ class BrainDockMenuBar(rumps.App):
         """Open web dashboard in default browser."""
         url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com/dashboard")
         webbrowser.open(url)
+
+    def _open_pricing(self, sender) -> None:
+        """Open pricing page to buy more hours."""
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com").rstrip("/")
+        webbrowser.open(f"{url}/pricing/")
 
     def _download_report(self, sender) -> None:
         """Open the most recently generated PDF report."""

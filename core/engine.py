@@ -135,6 +135,10 @@ class SessionEngine:
     # Public API
     # ------------------------------------------------------------------
 
+    def set_sync_client(self, client) -> None:
+        """Set the Supabase sync client on the usage limiter for credit fetch/record."""
+        self.usage_limiter.set_sync_client(client)
+
     def set_monitoring_mode(self, mode: str) -> None:
         """
         Set the monitoring mode.
@@ -172,18 +176,21 @@ class SessionEngine:
         if self.is_running:
             return {"success": False, "error": "Session already running", "error_type": "already_running"}
 
-        # Usage limit check
+        # Sync credits from cloud so we have latest balance (e.g. after buying hours on website)
+        self.usage_limiter.sync_with_cloud()
+
+        # Usage limit check (credits / hours remaining)
         if self.is_locked:
             return {
                 "success": False,
-                "error": "Your trial time has run out. Request more time from the dashboard.",
+                "error": "No hours remaining. Purchase more at thebraindock.com",
                 "error_type": "time_exhausted",
             }
         if self.usage_limiter.is_time_exhausted():
             self.is_locked = True
             return {
                 "success": False,
-                "error": "Your trial time has run out.",
+                "error": "No hours remaining. Purchase more at thebraindock.com",
                 "error_type": "time_exhausted",
             }
 
@@ -962,7 +969,7 @@ class SessionEngine:
                 self.on_session_ended(report_path)
 
         self.is_locked = True
-        self._notify_status_change("locked", "Time Exhausted")
+        self._notify_status_change("locked", "No Hours Remaining")
 
     # ------------------------------------------------------------------
     # Report generation

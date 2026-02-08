@@ -284,12 +284,14 @@ ALERT_POPUP_DURATION = 10
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # Can override in .env: DEBUG, INFO, WARNING, ERROR
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# MVP Usage Limit Settings
-# Limits total usage time for trial/demo purposes
-MVP_LIMIT_SECONDS = 7200  # Initial time limit in seconds (default: 2 hours)
-MVP_EXTENSION_SECONDS = 7200  # Time added per password unlock in seconds (default: 2 hours)
-MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")  # Password to unlock more time
-USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # User data (persists)
+# Credits / usage (cloud-synced; local cache in usage_data.json)
+USAGE_DATA_FILE = USER_DATA_DIR / "usage_data.json"  # Local cache of credit balance
+CREDITS_SYNC_INTERVAL = 300  # Seconds between optional background sync (session start/end are primary)
+
+# Deprecated: replaced by credit packs (Supabase user_credits)
+MVP_LIMIT_SECONDS = 7200
+MVP_EXTENSION_SECONDS = 7200
+MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")
 
 # Supabase Configuration (auth, settings sync, session upload)
 # Priority: 1) Environment variable, 2) Bundled key, 3) Empty string

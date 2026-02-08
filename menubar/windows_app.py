@@ -55,8 +55,9 @@ class BrainDockTray:
         self.engine.on_error = self._on_error
         self.engine.on_alert = self._on_alert
 
-        # Sync client
+        # Sync client (used for credits and session upload)
         self.sync = BrainDockSync()
+        self.engine.set_sync_client(self.sync)
 
         # Status text
         self._status_text: str = "Ready to start"
@@ -141,6 +142,12 @@ class BrainDockTray:
                     checked=lambda item: self.engine.monitoring_mode == config.MODE_BOTH,
                 ),
             )),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                lambda item: self._credits_menu_title(),
+                None, enabled=False,
+            ),
+            pystray.MenuItem("Get More Hours", self._open_pricing),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open Dashboard", self._open_dashboard),
             pystray.MenuItem("Download Last Report", self._download_report),
@@ -268,6 +275,24 @@ class BrainDockTray:
         """Open web dashboard in browser."""
         url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com/dashboard")
         webbrowser.open(url)
+
+    def _credits_menu_title(self) -> str:
+        """Return current credits remaining for menu display."""
+        try:
+            tr = self.engine.check_time_remaining()
+            remaining = tr.get("remaining_seconds", 0)
+            h = remaining // 3600
+            m = (remaining % 3600) // 60
+            if h > 0:
+                return f"Credits: {h}h {m}m remaining"
+            return f"Credits: {m}m remaining"
+        except Exception:
+            return "Credits: —"
+
+    def _open_pricing(self, icon, item) -> None:
+        """Open pricing page to buy more hours."""
+        url = getattr(config, "DASHBOARD_URL", "https://thebraindock.com").rstrip("/")
+        webbrowser.open(f"{url}/pricing/")
 
     def _download_report(self, icon, item) -> None:
         """Open the most recently generated PDF report."""

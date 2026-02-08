@@ -1,10 +1,9 @@
 """
-Usage Limiter for BrainDock MVP.
+Usage Limiter for BrainDock.
 
-Tracks cumulative usage time across sessions and enforces a time limit.
-Users can unlock additional time by entering a secret password.
-
-Includes basic integrity protection to prevent casual file tampering.
+Tracks cumulative usage time (credits) as a local cache of cloud balance.
+Cloud (Supabase user_credits) is the source of truth; sync on session start/end.
+Includes integrity protection to prevent casual file tampering.
 """
 
 import hashlib
@@ -15,7 +14,7 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import config
 from tracking.analytics import format_duration
@@ -28,20 +27,18 @@ _INTEGRITY_SALT = b"BrainDock_v1_" + b"\x7f\x3a\x9c\x42"
 
 class UsageLimiter:
     """
-    Manages MVP usage time limits.
-    
-    Tracks total usage time across all sessions and provides methods
-    to check remaining time, record usage, and unlock additional time
-    via password authentication.
-    
-    Includes integrity protection to detect file tampering.
+    Manages usage time (credit hours) as a local cache of cloud balance.
+
+    Cloud is the source of truth; sync_with_cloud() updates local state from
+    Supabase user_credits. record_usage() updates both local and cloud.
     """
-    
-    def __init__(self):
-        """Initialize the usage limiter and load existing usage data."""
+
+    def __init__(self) -> None:
+        """Initialize the usage limiter and load existing usage data (local cache)."""
         self.data_file: Path = config.USAGE_DATA_FILE
         self._tampered: bool = False  # Set True if integrity check fails
         self._lock = threading.Lock()  # Thread safety for data operations
+        self._sync_client: Any = None  # BrainDockSync instance, set by engine
         self.data = self._load_data()
     
     def _compute_integrity_hash(self, data: dict) -> str:
@@ -101,14 +98,14 @@ class UsageLimiter:
                 if not self._verify_integrity(data):
                     logger.warning("Usage data integrity check failed - possible tampering")
                     self._tampered = True
-                    # Return data with time exhausted (user must use password)
+                    # Return data with time exhausted (tampered)
                     return {
-                        "total_used_seconds": config.MVP_LIMIT_SECONDS,
-                        "total_granted_seconds": config.MVP_LIMIT_SECONDS,
+                        "total_used_seconds": data.get("total_granted_seconds", 0),
+                        "total_granted_seconds": data.get("total_granted_seconds", 0),
                         "extensions_granted": 0,
-                        "max_extensions": 3,
+                        "max_extensions": 0,
                         "first_use": data.get("first_use"),
-                        "last_session_end": data.get("last_session_end")
+                        "last_session_end": data.get("last_session_end"),
                     }
                 
                 # Ensure max_extensions field exists (migration for older files)
@@ -123,22 +120,22 @@ class UsageLimiter:
                 # File exists but couldn't be read - treat as tampering
                 self._tampered = True
                 return {
-                    "total_used_seconds": config.MVP_LIMIT_SECONDS,
-                    "total_granted_seconds": config.MVP_LIMIT_SECONDS,
+                    "total_used_seconds": 0,
+                    "total_granted_seconds": 0,
                     "extensions_granted": 0,
-                    "max_extensions": 3,
+                    "max_extensions": 0,
                     "first_use": None,
-                    "last_session_end": None
+                    "last_session_end": None,
                 }
         
-        # File doesn't exist - new user, grant initial time
+        # File doesn't exist - new user, start at zero (credits come from cloud after sync)
         return {
             "total_used_seconds": 0,
-            "total_granted_seconds": config.MVP_LIMIT_SECONDS,
+            "total_granted_seconds": 0,
             "extensions_granted": 0,
-            "max_extensions": 3,
+            "max_extensions": 0,
             "first_use": None,
-            "last_session_end": None
+            "last_session_end": None,
         }
     
     def _save_data(self) -> None:
@@ -233,6 +230,34 @@ class UsageLimiter:
                 return False
         
         return False
+
+    def set_sync_client(self, client: Any) -> None:
+        """Set the Supabase sync client for cloud credit fetch/record (called by engine)."""
+        self._sync_client = client
+
+    def sync_with_cloud(self) -> bool:
+        """
+        Fetch credit balance from cloud and update local cache.
+
+        Returns:
+            True if cloud was reached and local data was updated, False if offline/error.
+        """
+        if not self._sync_client:
+            logger.debug("No sync client — using local cache only")
+            return False
+        try:
+            balance = self._sync_client.get_credit_balance()
+            purchased = int(balance.get("total_purchased_seconds", 0))
+            used = int(balance.get("total_used_seconds", 0))
+            with self._lock:
+                self.data["total_granted_seconds"] = purchased
+                self.data["total_used_seconds"] = used
+                self._save_data()
+            logger.debug(f"Synced credits from cloud: {purchased}s purchased, {used}s used")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not sync credits from cloud: {e}")
+            return False
     
     def get_remaining_seconds(self) -> int:
         """
@@ -320,81 +345,31 @@ class UsageLimiter:
     
     def record_usage(self, seconds: int) -> None:
         """
-        Record usage time (thread-safe).
-        
+        Record usage time locally and in cloud (thread-safe).
+
         Args:
             seconds: Number of seconds to add to total usage. Must be non-negative.
-        
+
         Raises:
             ValueError: If seconds is negative.
         """
         if seconds < 0:
             raise ValueError("Usage seconds must be non-negative")
-        
+
         with self._lock:
             if self.data["first_use"] is None:
                 self.data["first_use"] = datetime.now().isoformat()
-            
             self.data["total_used_seconds"] += seconds
             self._save_data()
+        if self._sync_client:
+            if not self._sync_client.record_usage(seconds):
+                logger.warning("Failed to record usage to cloud (will use local cache until next sync)")
     
     def end_session(self) -> None:
         """Record the end of a session (thread-safe)."""
         with self._lock:
             self.data["last_session_end"] = datetime.now().isoformat()
             self._save_data()
-    
-    def validate_password(self, password: str) -> bool:
-        """
-        Validate the unlock password.
-        
-        Args:
-            password: Password entered by user.
-            
-        Returns:
-            True if password is correct, False otherwise.
-        """
-        correct_password = config.MVP_UNLOCK_PASSWORD
-        
-        # If no password is configured, don't allow unlocking
-        if not correct_password:
-            logger.warning("No MVP_UNLOCK_PASSWORD configured in .env")
-            return False
-        
-        return password == correct_password
-    
-    def grant_extension(self) -> int:
-        """
-        Grant a time extension (after password validation, thread-safe).
-        
-        Also clears any tampered state and re-saves with valid integrity hash.
-        Respects the max_extensions limit.
-        
-        Returns:
-            Number of seconds added, or 0 if extension limit reached.
-        """
-        with self._lock:
-            # Check if extension limit reached
-            if not self.can_grant_extension():
-                logger.warning(f"Extension limit reached ({self.get_extensions_count()}/{self.get_max_extensions()})")
-                return 0
-            
-            extension_seconds = config.MVP_EXTENSION_SECONDS
-            
-            # Clear tampered state - user has legitimately authenticated
-            if self._tampered:
-                logger.info("Clearing tampered state after successful password authentication")
-                self._tampered = False
-            
-            self.data["total_granted_seconds"] += extension_seconds
-            self.data["extensions_granted"] += 1
-            self._save_data()
-            
-            logger.info(f"Granted {extension_seconds}s extension. "
-                       f"Total granted: {self.data['total_granted_seconds']}s "
-                       f"({self.get_extensions_count()}/{self.get_max_extensions()} extensions used)")
-            
-            return extension_seconds
     
     def format_time(self, seconds: int, full_precision: bool = False) -> str:
         """
